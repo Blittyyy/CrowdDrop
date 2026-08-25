@@ -1,0 +1,48 @@
+{
+  "name": "crowddrop",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "test:route": "node --experimental-strip-types scripts/check-app-route.ts",
+    "test:allowance": "node --experimental-strip-types scripts/check-token-allowance.ts",
+    "test:network": "node --experimental-strip-types scripts/check-active-network.ts",
+    "compile": "hardhat compile",
+    "test:escrow": "hardhat test",
+    "deploy:sepolia": "hardhat run scripts/deploy.cjs --network sepolia",
+    "deploy:token-escrow": "hardhat run scripts/deploy-token-escrow.cjs --network sepolia",
+    "deploy:crowddrop-sepolia": "hardhat run scripts/deploy-crowddrop.cjs --network sepolia",
+    "sepolia:crowddrop-multidrop": "hardhat run scripts/sepolia-crowddrop-multidrop.cjs --network sepolia",
+    "crowddrop:create-test": "hardhat run scripts/crowddrop-create-test.cjs --network sepolia",
+    "crowddrop:join-buyer2": "node scripts/crowddrop-join-buyer2.cjs",
+    "deploy:polygon-usdt": "hardhat run scripts/deploy-polygon-usdt-escrow.cjs --network polygon",
+    "deploy:crowddrop-polygon": "hardhat run scripts/deploy-crowddrop-polygon.cjs --network polygon",
+    "join:buyer2": "hardhat run scripts/join-buyer2.cjs --network sepolia",
+    "claim:seller": "hardhat run scripts/seller-claim.cjs --network sepolia",
+    "token:join-buyer2": "hardhat run scripts/token-join-buyer2.cjs --network sepolia",
+    "token:withdraw-buyer2": "hardhat run scripts/token-withdraw-buyer2.cjs --network sepolia",
+    "token:claim-seller": "hardhat run scripts/token-seller-claim.cjs --network sepolia"
+  },
+  "dependencies": {
+    "@nimiq/mini-app-sdk": "^0.1.0",
+    "viem": "^2.31.7",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@openzeppelin/contracts": "^5.6.1",
+    "@types/node": "^22.13.10",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/tsconfig": "^0.7.0",
+    "chai": "^4.5.0",
+    "dotenv": "^16.5.0",
+    "ethers": "^6.14.4",
+    "hardhat": "^2.24.3",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.2",
+    "vue-tsc": "^2.2.8"
+  }
+}
