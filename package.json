@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test:route": "node --experimental-strip-types scripts/check-app-route.ts",
     "test:allowance": "node --experimental-strip-types scripts/check-token-allowance.ts",
+    "test:token-math": "node --experimental-strip-types scripts/check-token-math.ts",
     "test:network": "node --experimental-strip-types scripts/check-active-network.ts",
     "compile": "hardhat compile",
     "test:escrow": "hardhat test",
