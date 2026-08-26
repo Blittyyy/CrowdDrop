@@ -122,7 +122,7 @@ onMounted(() => {
 <template>
   <section class="lists">
     <div class="block">
-      <h2>Community Drops</h2>
+      <h2>Community drops</h2>
       <p v-if="communityStatus" class="wait">{{ communityStatus }}</p>
       <button v-if="communityFailed" type="button" class="retry" @click="loadCommunity">Retry</button>
       <div v-if="community.length" class="cards">
@@ -130,14 +130,14 @@ onMounted(() => {
       </div>
     </div>
     <div class="block">
-      <h2>My Drops</h2>
+      <h2>My drops</h2>
       <p v-if="myStatus" class="wait">{{ myStatus }}</p>
       <div v-if="mine.length" class="cards">
         <DropCard v-for="row in mine" :key="'mine-' + row.id" :summary="row" />
       </div>
     </div>
     <div v-if="recent.length || recentStatus" class="block">
-      <h2>Recent Drops</h2>
+      <h2>Recent drops</h2>
       <p v-if="recentStatus" class="wait">{{ recentStatus }}</p>
       <div v-if="recent.length" class="cards">
         <DropCard v-for="row in recent" :key="'recent-' + row.id" :summary="row" />
@@ -150,30 +150,39 @@ onMounted(() => {
 .lists {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  margin-top: 1.5rem;
+  gap: 1.75rem;
+  margin-top: 1.75rem;
 }
 .block {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 .cards {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--cd-tan);
+  letter-spacing: 0.01em;
 }
 .wait {
   margin: 0;
-  font-weight: 600;
+  color: var(--cd-muted);
+  font-size: 0.85rem;
 }
 .retry {
-  min-height: 44px;
-  font-size: 1rem;
+  min-height: 40px;
   align-self: flex-start;
+  border-radius: 12px;
+  border: 1px solid var(--cd-border);
+  background: transparent;
+  color: var(--cd-cream);
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
 }
 </style>

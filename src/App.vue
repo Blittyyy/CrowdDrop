@@ -29,6 +29,7 @@ function readRoute(): AppRoute {
 
 const route = ref<AppRoute>(readRoute())
 const routeKey = computed(() => JSON.stringify(route.value))
+const isDev = computed(() => route.value.name === 'dev')
 
 function syncRoute() {
   route.value = readRoute()
@@ -51,7 +52,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main>
+  <main class="shell" :class="isDev ? 'dev-shell' : 'product-shell'">
     <CrowdDropCreate v-if="route.name === 'create'" :key="routeKey" />
     <CrowdDropView v-else-if="route.name === 'drop'" :key="routeKey" :drop-param="route.dropParam" />
     <DevTools v-else />
@@ -65,8 +66,29 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.shell {
+  width: min(100%, var(--cd-max));
+  margin: 0 auto;
+  padding: 1.1rem 1rem 2rem;
+}
+.dev-shell {
+  width: min(100%, 40rem);
+  background: #f4f4f4;
+  color: #111;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-top: 0.5rem;
+}
 .dev-link {
-  margin-top: 1.5rem;
-  font-size: 0.9rem;
+  margin-top: 1.75rem;
+  font-size: 0.78rem;
+  color: var(--cd-muted);
+}
+.dev-link summary {
+  cursor: pointer;
+  color: var(--cd-muted);
+}
+.dev-link a {
+  color: var(--cd-tan);
 }
 </style>

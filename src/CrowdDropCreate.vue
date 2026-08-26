@@ -25,6 +25,7 @@ import {
 
 const network = activeCrowdDropNetwork
 
+const showCreate = ref(false)
 const contributionInput = ref('1')
 const goalInput = ref('2')
 const durationSeconds = ref<number>(CROWDDROP_DURATION_OPTIONS[2].seconds)
@@ -42,9 +43,26 @@ const shareUrl = computed(() => {
   return `${window.location.origin}/?drop=${createdDropId.value}`
 })
 
+const creating = computed(() => showCreate.value || !!createdDropId.value)
+
 function setError(error: unknown) {
   errorMessage.value = friendlyUserError(error)
   errorDetail.value = developerErrorDetail(error)
+}
+
+function openCreate() {
+  showCreate.value = true
+  errorMessage.value = null
+  errorDetail.value = null
+}
+
+function backToHome() {
+  showCreate.value = false
+  createdDropId.value = null
+  lastTxHash.value = null
+  copied.value = false
+  errorMessage.value = null
+  errorDetail.value = null
 }
 
 async function createDrop() {
@@ -118,105 +136,230 @@ function openDrop() {
 </script>
 
 <template>
-  <section class="card">
-    <h1>Create a CrowdDrop</h1>
-    <p class="lede">Sellers create a drop, then share the link. Buyers enable CrowdDrop once, then join separately.</p>
-    <p>{{ network.tokenSymbol }} on {{ network.chainName }}</p>
+  <div class="home">
+    <header class="top">
+      <p class="brand">CrowdDrop</p>
+      <WalletBar compact :extra-busy="busy" />
+    </header>
 
-    <WalletBar :extra-busy="busy" />
-
-    <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-    <details v-if="errorDetail" class="dev">
-      <summary>Developer details</summary>
-      <pre>{{ errorDetail }}</pre>
-    </details>
-    <p v-if="waitingLabel" class="wait">{{ waitingLabel }}</p>
-
-    <form class="form" @submit.prevent="createDrop">
-      <label>
-        Contribution per person ({{ network.tokenSymbol }})
-        <input v-model="contributionInput" type="text" inputmode="decimal" autocomplete="off" :disabled="busy">
-      </label>
-      <label>
-        Number of buyers required
-        <input v-model="goalInput" type="number" :min="network.minGoal" :max="network.maxGoal" step="1" :disabled="busy">
-      </label>
-      <label>
-        Duration
-        <select v-model.number="durationSeconds" :disabled="busy">
-          <option v-for="option in CROWDDROP_DURATION_OPTIONS" :key="option.seconds" :value="option.seconds">
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
-      <button type="submit" :disabled="busy || walletBusy || !walletReady">
-        {{ busy ? 'Working…' : 'Create Drop' }}
+    <section v-if="!creating" class="hero">
+      <h1>
+        Pool together.<br>
+        Unlock the deal.
+      </h1>
+      <p class="lede">Create or join a Drop and reach your goal together.</p>
+      <button type="button" class="primary create-cta" @click="openCreate">
+        + Create a Drop
       </button>
-    </form>
+    </section>
 
-    <div v-if="createdDropId" class="success">
-      <p><strong>Drop {{ createdDropId }} created.</strong></p>
-      <p>Share this link:</p>
-      <p class="link">{{ shareUrl }}</p>
-      <p v-if="lastTxHash" class="hash">Tx: {{ lastTxHash }}</p>
-      <div class="actions">
-        <button type="button" @click="copyLink">{{ copied ? 'Copied' : 'Copy Link' }}</button>
-        <button type="button" @click="openDrop">Open Drop</button>
+    <section v-else class="create-panel">
+      <button type="button" class="back" @click="backToHome">← Back</button>
+      <h1 class="create-title">Create a Drop</h1>
+      <p class="lede">Set the contribution, buyer goal, and duration.</p>
+
+      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+      <details v-if="errorDetail" class="dev">
+        <summary>Developer details</summary>
+        <pre>{{ errorDetail }}</pre>
+      </details>
+      <p v-if="waitingLabel" class="wait">{{ waitingLabel }}</p>
+
+      <form v-if="!createdDropId" class="form" @submit.prevent="createDrop">
+        <label>
+          <span>Contribution per person ({{ network.tokenSymbol }})</span>
+          <input v-model="contributionInput" type="text" inputmode="decimal" autocomplete="off" :disabled="busy">
+        </label>
+        <label>
+          <span>Buyer goal</span>
+          <input v-model="goalInput" type="number" :min="network.minGoal" :max="network.maxGoal" step="1" :disabled="busy">
+        </label>
+        <label>
+          <span>Duration</span>
+          <select v-model.number="durationSeconds" :disabled="busy">
+            <option v-for="option in CROWDDROP_DURATION_OPTIONS" :key="option.seconds" :value="option.seconds">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+        <button type="submit" class="primary" :disabled="busy || walletBusy || !walletReady">
+          {{ busy ? 'Working…' : 'Create Drop' }}
+        </button>
+      </form>
+
+      <div v-if="createdDropId" class="success">
+        <p class="success-title">Drop {{ createdDropId }} created.</p>
+        <p class="muted">Share this link:</p>
+        <p class="link">{{ shareUrl }}</p>
+        <p v-if="lastTxHash" class="hash">Tx: {{ lastTxHash }}</p>
+        <div class="actions">
+          <button type="button" class="primary" @click="copyLink">{{ copied ? 'Copied' : 'Copy Link' }}</button>
+          <button type="button" class="secondary" @click="openDrop">Open Drop</button>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <DropLists />
+    <DropLists />
+  </div>
 </template>
 
 <style scoped>
-.card {
-  background: #fff;
-  border: 1px solid #ddd;
-  padding: 1rem;
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
-.lede,
-p,
-h1 {
-  overflow-wrap: anywhere;
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
 }
-.error {
-  color: #a40000;
-}
-.wait {
+.brand {
+  margin: 0;
+  font-family: var(--cd-font-serif);
+  font-size: 1.35rem;
   font-weight: 600;
+  color: var(--cd-cream);
+  letter-spacing: -0.02em;
+}
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.hero h1 {
+  margin: 0;
+  font-family: var(--cd-font-serif);
+  font-size: clamp(2rem, 7vw, 2.55rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--cd-cream);
+}
+.lede {
+  margin: 0;
+  color: var(--cd-tan);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  max-width: 22rem;
+}
+.create-cta {
+  margin-top: 0.35rem;
+}
+.create-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--cd-surface);
+  border: 1px solid var(--cd-border);
+  border-radius: var(--cd-radius);
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+}
+.create-title {
+  margin: 0;
+  font-family: var(--cd-font-serif);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.back {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--cd-tan);
+  cursor: pointer;
+  font-size: 0.9rem;
 }
 .form,
 .actions {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  margin-top: 1rem;
+  margin-top: 0.35rem;
 }
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  font-weight: 600;
+  gap: 0.4rem;
+}
+label span {
+  color: var(--cd-tan);
+  font-size: 0.82rem;
+  font-weight: 500;
 }
 input,
-select,
-button {
-  min-height: 44px;
+select {
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid var(--cd-border);
+  background: var(--cd-surface-2);
+  color: var(--cd-cream);
+  padding: 0.75rem 0.9rem;
+}
+input:focus,
+select:focus {
+  outline: 1px solid var(--cd-orange);
+  border-color: var(--cd-orange);
+}
+option {
+  background: var(--cd-surface-2);
+  color: var(--cd-cream);
+}
+button.primary,
+button.secondary {
+  min-height: 50px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  padding: 0.85rem 1rem;
   font-size: 1rem;
-  padding: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
 }
-.success {
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid #ddd;
+button.primary {
+  background: var(--cd-orange);
+  color: var(--cd-cream);
 }
-.link,
-.hash {
-  font-size: 0.9rem;
+button.primary:hover:not(:disabled) {
+  background: var(--cd-orange-press);
+}
+button.secondary {
+  background: transparent;
+  color: var(--cd-cream);
+  border-color: var(--cd-border);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.error {
+  margin: 0;
+  color: var(--cd-error);
+}
+.wait {
+  margin: 0;
+  font-weight: 600;
+}
+.success-title {
+  margin: 0;
+  font-family: var(--cd-font-serif);
+  font-size: 1.4rem;
+}
+.muted,
+.hash,
+.link {
+  margin: 0.35rem 0 0;
+  color: var(--cd-tan);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
 }
 .dev {
-  margin: 0.5rem 0;
+  color: var(--cd-muted);
 }
 pre {
   white-space: pre-wrap;

@@ -18,7 +18,15 @@ import {
   isUnknownDropError,
 } from './userErrors'
 import { isUserRejection, sameAddress, shortenAddress } from './wallet'
-import { goToCreateDrop, goToHome, saveLastOpenedDrop } from './lastOpenedDrop'
+import { goToHome, saveLastOpenedDrop } from './lastOpenedDrop'
+import {
+  approvalCapLabel,
+  formatMoneyLabel,
+  formatRemainingShort,
+  objectiveStatusLabel,
+  progressRatio,
+  spotsLeft,
+} from './uiFormat'
 import WalletBar from './WalletBar.vue'
 import {
   confirmActiveChain,
@@ -127,18 +135,52 @@ const requiredAction = computed(() => {
 const remaining = computed(() => {
   if (!drop.value || statusLabel.value !== 'Active')
     return null
-  const left = Number(drop.value.deadline) - nowSec.value
-  if (left <= 0)
-    return 'ending now'
-  const hours = Math.floor(left / 3600)
-  const minutes = Math.floor((left % 3600) / 60)
-  const seconds = left % 60
-  if (hours >= 48)
-    return `${Math.floor(hours / 24)}d ${hours % 24}h left`
-  if (hours >= 1)
-    return `${hours}h ${minutes}m left`
-  return `${minutes}m ${seconds}s left`
+  const short = formatRemainingShort(drop.value.deadline, nowSec.value)
+  return short ? `${short} left` : null
 })
+
+const contributionMoney = computed(() =>
+  drop.value ? formatMoneyLabel(drop.value.contribution, network.tokenDecimals) : '',
+)
+const escrowedMoney = computed(() =>
+  drop.value ? formatMoneyLabel(drop.value.escrowed, network.tokenDecimals) : '',
+)
+const depositMoney = computed(() => formatMoneyLabel(deposit.value, network.tokenDecimals))
+const progress = computed(() =>
+  drop.value ? progressRatio(drop.value.buyerCount, drop.value.goal) : 0,
+)
+const spots = computed(() =>
+  drop.value ? spotsLeft(drop.value.buyerCount, drop.value.goal) : 0,
+)
+const badge = computed(() => {
+  if (!drop.value || !statusLabel.value)
+    return 'UNKNOWN'
+  return objectiveStatusLabel(statusLabel.value as 'Active' | 'Successful' | 'Expired' | 'Claimed' | 'Unknown', drop.value)
+})
+const progressMeta = computed(() => {
+  if (!drop.value)
+    return ''
+  const joined = `${drop.value.buyerCount.toString()} of ${drop.value.goal.toString()} joined`
+  if (statusLabel.value === 'Active')
+    return `${joined} · ${spots.value} spot${spots.value === 1 ? '' : 's'} left${remaining.value ? ` · ${remaining.value}` : ''}`
+  return joined
+})
+const sellerCopied = ref(false)
+
+async function copySeller() {
+  if (!drop.value)
+    return
+  try {
+    await navigator.clipboard.writeText(drop.value.seller)
+    sellerCopied.value = true
+    window.setTimeout(() => {
+      sellerCopied.value = false
+    }, 1500)
+  }
+  catch {
+    /* ignore */
+  }
+}
 
 function setError(error: unknown) {
   errorMessage.value = friendlyUserError(error)
@@ -419,18 +461,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="card">
-    <p class="nav">
-      <a href="/?home=1" @click.prevent="goToHome">← Home</a>
-      <a href="/?home=1" @click.prevent="goToCreateDrop">New Drop</a>
-    </p>
-    <h1>Drop {{ dropId?.toString() ?? dropParam }}</h1>
+  <section class="drop-view">
+    <header class="top">
+      <a class="back" href="/?home=1" @click.prevent="goToHome">←</a>
+      <p class="drop-meta">
+        Drop #{{ dropId?.toString() ?? dropParam }}
+        <template v-if="statusLabel"> · {{ statusLabel }}</template>
+      </p>
+    </header>
 
-    <WalletBar :extra-busy="busy" />
+    <WalletBar compact :extra-busy="busy" />
+
     <p v-if="dropStatus || (requiredAction && !drop)" class="wait">
       {{ dropStatus ?? requiredAction }}
     </p>
-    <p v-else-if="requiredAction && drop" class="wait">{{ requiredAction }}</p>
+    <p v-else-if="requiredAction && drop" class="wait warn">{{ requiredAction }}</p>
 
     <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     <p v-if="loadError" class="error">{{ loadError }}</p>
@@ -439,133 +484,346 @@ onUnmounted(() => {
       <pre>{{ errorDetail }}</pre>
     </details>
     <p v-if="waitingLabel" class="wait">{{ waitingLabel }}</p>
-    <p v-if="lastTxHash" class="hash">Last tx: {{ lastTxHash }}</p>
 
-    <div class="actions">
-      <button type="button" :disabled="busy || walletBusy" @click="loadDrop">Refresh</button>
+    <div v-if="drop" class="hero-block">
+      <template v-if="statusLabel === 'Successful'">
+        <p class="state-kicker success-tone">{{ badge }}</p>
+        <h1 class="headline">Drop Unlocked.</h1>
+        <p class="hero-sub">
+          {{ drop.buyerCount.toString() }} joined · {{ escrowedMoney }} pooled
+        </p>
+      </template>
+      <template v-else-if="statusLabel === 'Claimed'">
+        <p class="state-kicker success-tone">{{ badge }}</p>
+        <h1 class="headline">Claimed.</h1>
+        <p class="hero-sub">The seller has claimed the pooled funds.</p>
+      </template>
+      <template v-else-if="statusLabel === 'Expired'">
+        <p class="state-kicker expired-tone">{{ badge }}</p>
+        <h1 class="headline">Drop Expired.</h1>
+        <p v-if="hasDeposit" class="hero-sub">Your contribution is available to withdraw.</p>
+        <p v-else class="hero-sub">This Drop did not reach its goal.</p>
+      </template>
+      <template v-else>
+        <h1 class="amount-hero">
+          <span class="dollars">{{ contributionMoney }}</span>
+          <span class="per">USDT per person</span>
+        </h1>
+        <div class="bar" aria-hidden="true">
+          <span class="fill" :style="{ width: `${progress}%` }" />
+        </div>
+        <p class="progress-meta">{{ progressMeta }}</p>
+        <div class="info-row">
+          <span>{{ escrowedMoney }} pooled</span>
+          <span>approval up to {{ approvalCapLabel() }}</span>
+        </div>
+        <p class="trust">
+          Funds stay in the CrowdDrop contract until the goal is reached or the Drop expires. Only the creator can claim a successful Drop.
+        </p>
+      </template>
+
+      <div class="seller">
+        <span>Created by {{ shortenAddress(drop.seller) }}<template v-if="isSeller"> (you)</template></span>
+        <button type="button" class="copy" :title="sellerCopied ? 'Copied' : 'Copy address'" @click="copySeller">
+          {{ sellerCopied ? '✓' : '⎘' }}
+        </button>
+      </div>
     </div>
 
-    <div v-if="drop" class="details">
-      <p>Seller: {{ shortenAddress(drop.seller) }} <span v-if="isSeller">(you)</span></p>
-      <p>Contribution: {{ formatTokenAmount(drop.contribution, network.tokenDecimals) }} {{ tokenLabel }}</p>
-      <p>Buyers: {{ drop.buyerCount.toString() }} / {{ drop.goal.toString() }}</p>
-      <p>Escrowed: {{ formatTokenAmount(drop.escrowed, network.tokenDecimals) }} {{ tokenLabel }}</p>
-      <p>Deadline: {{ new Date(Number(drop.deadline) * 1000).toLocaleString() }}</p>
-      <p v-if="remaining">Time remaining: {{ remaining }}</p>
-      <p>Status: <strong>{{ statusLabel }}</strong></p>
-      <p v-if="walletAccount">Your {{ tokenLabel }}: {{ formatTokenAmount(tokenBalance, network.tokenDecimals) }}</p>
-    </div>
+    <div v-if="drop" class="divider" />
 
-    <div v-if="drop && isSeller && walletReady" class="panel">
-      <p v-if="statusLabel === 'Active'">Waiting for buyers.</p>
-      <p v-if="statusLabel === 'Successful'">Goal reached. Funds are ready to claim.</p>
-      <p v-if="statusLabel === 'Expired'">This drop did not reach its goal. Buyers can withdraw their deposits. You cannot claim.</p>
-      <p v-if="statusLabel === 'Claimed'">This drop is complete. You claimed the escrowed funds. Escrowed is now 0 {{ tokenLabel }}.</p>
+    <div v-if="drop && isSeller && walletReady" class="actions">
+      <p v-if="statusLabel === 'Active'" class="note">Waiting for buyers.</p>
+      <p v-if="statusLabel === 'Successful'" class="note">Goal reached. Funds are ready to claim.</p>
+      <p v-if="statusLabel === 'Expired'" class="note">Buyers can withdraw their deposits. You cannot claim.</p>
+      <p v-if="statusLabel === 'Claimed'" class="note">This Drop is complete.</p>
       <button
         v-if="canClaim"
         type="button"
+        class="primary success"
         :disabled="busy"
         @click="claim"
       >
-        Claim {{ formatTokenAmount(drop.escrowed, network.tokenDecimals) }} {{ tokenLabel }}
+        Claim {{ escrowedMoney }} USDT
       </button>
     </div>
 
-    <div v-else-if="drop && walletReady" class="panel">
-      <p v-if="hasDeposit">
-        You joined with {{ formatTokenAmount(deposit, network.tokenDecimals) }} {{ tokenLabel }}
+    <div v-else-if="drop && walletReady" class="actions">
+      <div v-if="hasDeposit && statusLabel === 'Active'" class="joined">
+        <p class="joined-title">✓ You’re in this Drop</p>
+        <p class="joined-copy">
+          Your {{ formatTokenAmount(deposit, network.tokenDecimals) }} USDT is pooled and waiting on the rest.
+        </p>
+      </div>
+
+      <p v-if="statusLabel === 'Successful' && hasDeposit" class="note">
+        This Drop succeeded. Funds are locked for the seller to claim.
       </p>
-      <p v-if="statusLabel === 'Successful' && hasDeposit">
-        This drop succeeded. Funds are locked for the seller to claim. You cannot withdraw.
-      </p>
-      <p v-if="statusLabel === 'Expired' && hasDeposit">
-        This drop did not reach its goal. You can withdraw your deposit.
-      </p>
-      <p v-if="statusLabel === 'Claimed'">This drop is complete.</p>
+      <p v-if="statusLabel === 'Claimed'" class="note">This Drop is complete.</p>
+
       <p v-if="canApprove && insufficientBalance" class="error">
         Not enough {{ tokenLabel }} to join.
-      </p>
-      <p v-if="canApprove" class="note">
-        Allow CrowdDrop to use {{ tokenLabel }} when you choose to join drops. You will only be charged when you join.
       </p>
       <p v-if="canApprove && needsApprovalReset" class="note">
         Nimiq Pay will ask you to confirm twice: first to reset the old allowance, then to enable CrowdDrop.
       </p>
+
       <button
         v-if="canApprove"
         type="button"
+        class="primary"
         :disabled="busy"
         @click="approve"
       >
         Enable CrowdDrop
       </button>
+      <p v-if="canApprove" class="support">
+        One-time approval, reusable across future Drops up to {{ approvalCapLabel() }} USDT.
+      </p>
+
       <button
         v-if="canJoin"
         type="button"
+        class="primary"
         :disabled="busy"
         @click="join"
       >
-        Join with {{ formatTokenAmount(drop.contribution, network.tokenDecimals) }} {{ tokenLabel }}
+        Join for {{ contributionMoney }} USDT
       </button>
+
       <p v-if="statusLabel === 'Active' && !hasDeposit && !needsApproval && insufficientBalance" class="error">
         Not enough {{ tokenLabel }} to join.
       </p>
+
       <button
         v-if="canWithdraw"
         type="button"
+        class="ghost"
         :disabled="busy"
         @click="withdraw"
       >
-        Withdraw {{ formatTokenAmount(deposit, network.tokenDecimals) }} {{ tokenLabel }}
+        Withdraw {{ depositMoney }} USDT
       </button>
+    </div>
+
+    <div class="footer-actions">
+      <button type="button" class="text-btn" :disabled="busy || walletBusy" @click="loadDrop">Refresh</button>
+      <p v-if="lastTxHash" class="hash">Last tx: {{ lastTxHash }}</p>
     </div>
   </section>
 </template>
 
 <style scoped>
-.card {
-  background: #fff;
-  border: 1px solid #ddd;
-  padding: 1rem;
-}
-.nav {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-p,
-h1,
-a {
-  overflow-wrap: anywhere;
-}
-.error {
-  color: #a40000;
-}
-.wait {
-  font-weight: 600;
-}
-.actions,
-.panel {
+.drop-view {
   display: flex;
   flex-direction: column;
+  gap: 0.85rem;
+}
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.75rem;
-  margin-top: 1rem;
 }
-.details {
-  margin-top: 1rem;
+.back {
+  color: var(--cd-cream);
+  text-decoration: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0.25rem 0.15rem;
 }
-button {
-  min-height: 44px;
+.drop-meta {
+  margin: 0;
+  color: var(--cd-tan);
+  font-size: 0.82rem;
+}
+.hero-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 0.35rem;
+}
+.state-kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.success-tone {
+  color: var(--cd-success-text);
+}
+.expired-tone {
+  color: var(--cd-expired);
+}
+.headline {
+  margin: 0;
+  font-family: var(--cd-font-serif);
+  font-size: clamp(2rem, 7vw, 2.4rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.amount-hero {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.dollars {
+  font-family: var(--cd-font-serif);
+  font-size: clamp(2.6rem, 10vw, 3.4rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--cd-cream);
+}
+.per,
+.hero-sub {
+  margin: 0;
+  color: var(--cd-tan);
+  font-size: 0.92rem;
+}
+.bar {
+  height: 5px;
+  border-radius: 999px;
+  background: #2a2a2a;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+.fill {
+  display: block;
+  height: 100%;
+  background: var(--cd-orange);
+}
+.progress-meta,
+.info-row,
+.trust,
+.seller,
+.note,
+.support {
+  margin: 0;
+  color: var(--cd-tan);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.trust {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--cd-muted);
+}
+.seller {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+.copy {
+  border: none;
+  background: transparent;
+  color: var(--cd-muted);
+  cursor: pointer;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.9rem;
+}
+.divider {
+  height: 1px;
+  background: var(--cd-border);
+  margin: 0.35rem 0;
+}
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.joined {
+  background: var(--cd-joined);
+  border: 1px solid var(--cd-joined-border);
+  border-radius: var(--cd-radius);
+  padding: 1rem;
+}
+.joined-title {
+  margin: 0 0 0.35rem;
+  color: var(--cd-cream);
+  font-weight: 700;
+}
+.joined-copy {
+  margin: 0;
+  color: var(--cd-tan);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+button.primary,
+button.ghost {
+  min-height: 50px;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
   font-size: 1rem;
-  padding: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.primary {
+  background: var(--cd-orange);
+  color: var(--cd-cream);
+  border: 1px solid transparent;
+}
+button.primary.success {
+  background: var(--cd-success);
+}
+button.ghost {
+  background: transparent;
+  color: var(--cd-cream);
+  border: 1px solid var(--cd-border);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.support {
+  text-align: center;
+  font-size: 0.78rem;
+}
+.wait {
+  margin: 0;
+  font-weight: 600;
+  color: var(--cd-cream);
+}
+.wait.warn {
+  color: var(--cd-orange);
+}
+.error {
+  margin: 0;
+  color: var(--cd-error);
+}
+.footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.text-btn {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--cd-muted);
+  cursor: pointer;
+  padding: 0.25rem 0;
+  font-size: 0.82rem;
 }
 .hash,
-.dev,
-.note {
-  font-size: 0.85rem;
+.dev {
+  font-size: 0.75rem;
+  color: var(--cd-muted);
+  overflow-wrap: anywhere;
 }
 pre {
   white-space: pre-wrap;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
 }
 </style>

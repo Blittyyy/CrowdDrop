@@ -1,16 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap');
+
+:root {
+  --cd-bg: #141414;
+  --cd-surface: #1c1c1c;
+  --cd-surface-2: #222222;
+  --cd-border: #2a2a2a;
+  --cd-cream: #f2ebe0;
+  --cd-tan: #a89880;
+  --cd-muted: #7a7268;
+  --cd-orange: #d2652f;
+  --cd-orange-press: #b85528;
+  --cd-joined: #243447;
+  --cd-joined-border: #31485f;
+  --cd-success: #3d7a4a;
+  --cd-success-text: #8fd49a;
+  --cd-expired: #b8843a;
+  --cd-error: #d97a6c;
+  --cd-radius: 20px;
+  --cd-font-serif: 'Fraunces', 'Times New Roman', serif;
+  --cd-font-sans: 'DM Sans', system-ui, sans-serif;
+  --cd-max: 26rem;
+}
+
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
-  background: #f4f4f4;
-  color: #111;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--cd-font-sans);
+  background: var(--cd-bg);
+  color: var(--cd-cream);
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 1rem;
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+a {
+  color: var(--cd-tan);
 }
