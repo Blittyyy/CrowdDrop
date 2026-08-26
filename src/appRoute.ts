@@ -82,11 +82,11 @@ export function applySavedDrop(route: AppRoute, savedDrop: string | null): AppRo
 }
 
 export const APP_ROUTE_CASES: Array<{ href: string, route: AppRoute }> = [
-  { href: 'http://10.0.0.148:5173/', route: { name: 'create' } },
-  { href: 'http://10.0.0.148:5173', route: { name: 'create' } },
-  { href: 'http://10.0.0.148:5173/?drop=3', route: { name: 'drop', dropParam: '3' } },
-  { href: 'http://10.0.0.148:5173/?drop=999', route: { name: 'drop', dropParam: '999' } },
-  { href: 'http://10.0.0.148:5173/dev', route: { name: 'dev' } },
-  { href: 'http://10.0.0.148:5173/dev/', route: { name: 'dev' } },
-  { href: 'http://10.0.0.148:5173/#/?drop=3', route: { name: 'drop', dropParam: '3' } },
+  { href: 'https://usecrowddrop.xyz/', route: { name: 'create' } },
+  { href: 'https://usecrowddrop.xyz', route: { name: 'create' } },
+  { href: 'https://usecrowddrop.xyz/?drop=3', route: { name: 'drop', dropParam: '3' } },
+  { href: 'https://usecrowddrop.xyz/?drop=999', route: { name: 'drop', dropParam: '999' } },
+  { href: 'https://usecrowddrop.xyz/dev', route: { name: 'dev' } },
+  { href: 'https://usecrowddrop.xyz/dev/', route: { name: 'dev' } },
+  { href: 'https://usecrowddrop.xyz/#/?drop=3', route: { name: 'drop', dropParam: '3' } },
 ]

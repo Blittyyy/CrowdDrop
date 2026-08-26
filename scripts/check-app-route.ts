@@ -5,30 +5,30 @@ for (const { href, route } of APP_ROUTE_CASES) {
   assert.deepEqual(resolveAppRoute(href), route, href)
 }
 
-assert.deepEqual(resolveAppRoute('http://10.0.0.148:5173/?drop=3'), { name: 'drop', dropParam: '3' })
-assert.deepEqual(resolveAppRoute('http://10.0.0.148:5173/'), { name: 'create' })
-assert.deepEqual(resolveAppRoute('http://10.0.0.148:5173/?drop=999'), { name: 'drop', dropParam: '999' })
-assert.deepEqual(resolveAppRoute('http://10.0.0.148:5173/dev'), { name: 'dev' })
+assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/?drop=3'), { name: 'drop', dropParam: '3' })
+assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/'), { name: 'create' })
+assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/?drop=999'), { name: 'drop', dropParam: '999' })
+assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/dev'), { name: 'dev' })
 
 assert.deepEqual(
-  applySavedDrop(resolveAppRoute('http://10.0.0.148:5173/'), '3'),
+  applySavedDrop(resolveAppRoute('https://usecrowddrop.xyz/'), '3'),
   { name: 'drop', dropParam: '3' },
 )
 assert.deepEqual(
-  applySavedDrop(resolveAppRoute('http://10.0.0.148:5173/?drop=7'), '3'),
+  applySavedDrop(resolveAppRoute('https://usecrowddrop.xyz/?drop=7'), '3'),
   { name: 'drop', dropParam: '7' },
 )
 assert.deepEqual(
-  applySavedDrop(resolveAppRoute('http://10.0.0.148:5173/dev'), '3'),
+  applySavedDrop(resolveAppRoute('https://usecrowddrop.xyz/dev'), '3'),
   { name: 'dev' },
 )
 assert.deepEqual(
-  applySavedDrop(resolveAppRoute('http://10.0.0.148:5173/'), null),
+  applySavedDrop(resolveAppRoute('https://usecrowddrop.xyz/'), null),
   { name: 'create' },
 )
-assert.equal(wantsHomeScreen('http://10.0.0.148:5173/?home=1'), true)
-assert.equal(wantsHomeScreen('http://10.0.0.148:5173/'), false)
-assert.equal(wantsHomeScreen('http://10.0.0.148:5173/?drop=3'), false)
-assert.deepEqual(resolveAppRoute('http://10.0.0.148:5173/?home=1'), { name: 'create' })
+assert.equal(wantsHomeScreen('https://usecrowddrop.xyz/?home=1'), true)
+assert.equal(wantsHomeScreen('https://usecrowddrop.xyz/'), false)
+assert.equal(wantsHomeScreen('https://usecrowddrop.xyz/?drop=3'), false)
+assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/?home=1'), { name: 'create' })
 
 console.log(`appRoute: ${APP_ROUTE_CASES.length + 12} checks passed`)
