@@ -74,6 +74,7 @@ onUnmounted(() => {
     <p v-if="route.name !== 'dev' && route.name !== 'showcase'" class="dev-link">
       <details>
         <summary>More</summary>
+        <a href="/showcase">Design showcase</a>
         <a href="/dev">Development tools</a>
       </details>
     </p>
@@ -116,6 +117,8 @@ onUnmounted(() => {
   display: none;
 }
 .dev-link a {
+  display: block;
+  margin-top: 0.35rem;
   color: var(--cd-muted);
   font-size: 0.72rem;
 }
