@@ -52,3 +52,9 @@ select {
 a {
   color: var(--cd-tan);
 }
+
+body.cd-home {
+  background: #F6F6F4;
+  color: #141414;
+  font-family: Inter, system-ui, sans-serif;
+}

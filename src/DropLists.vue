@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import DropCard from './DropCard.vue'
 import { loadCommunityDrops, loadDropSummary, loadMyDrops, type DropSummary } from './dropCatalog'
+import { activeCrowdDropNetwork } from './escrowConfig'
 import { readRecentDropIds, removeRecentDropId } from './lastOpenedDrop'
 import {
   walletAccount,
@@ -34,6 +35,15 @@ function statusRank(status: DropSummary['status']): number {
 
 const mineSorted = computed(() =>
   [...mine.value].sort((a, b) => {
+    const byStatus = statusRank(a.status) - statusRank(b.status)
+    if (byStatus !== 0)
+      return byStatus
+    return BigInt(b.id) > BigInt(a.id) ? 1 : -1
+  }),
+)
+
+const communitySorted = computed(() =>
+  [...community.value].sort((a, b) => {
     const byStatus = statusRank(a.status) - statusRank(b.status)
     if (byStatus !== 0)
       return byStatus
@@ -115,12 +125,12 @@ async function loadMine() {
   }
   if (!walletAccount.value) {
     mine.value = []
-    myStatus.value = 'You haven’t created or joined a Drop yet.'
+    myStatus.value = 'Connect to see Your Drops.'
     return
   }
   if (!walletOnActiveNetwork.value) {
     mine.value = []
-    myStatus.value = 'You haven’t created or joined a Drop yet.'
+    myStatus.value = `Switch to ${activeCrowdDropNetwork.chainName} to see Your Drops.`
     return
   }
   myStatus.value = null
@@ -160,8 +170,8 @@ onMounted(() => {
       <h2>Community</h2>
       <p v-if="communityStatus" class="empty">{{ communityStatus }}</p>
       <button v-if="communityFailed" type="button" class="retry" @click="loadCommunity">Retry</button>
-      <div v-if="community.length" class="rows">
-        <DropCard v-for="row in community" :key="'community-' + row.id" :summary="row" />
+      <div v-if="communitySorted.length" class="rows">
+        <DropCard v-for="row in communitySorted" :key="'community-' + row.id" :summary="row" />
       </div>
     </div>
 
@@ -187,8 +197,9 @@ onMounted(() => {
 .lists {
   display: flex;
   flex-direction: column;
-  gap: 1.35rem;
-  margin-top: 0.85rem;
+  gap: 18px;
+  margin-top: 16px;
+  font-family: Inter, system-ui, sans-serif;
 }
 .block {
   display: flex;
@@ -200,35 +211,36 @@ onMounted(() => {
   flex-direction: column;
 }
 .rows :deep(.drop-row) {
-  border-bottom: 1px solid var(--cd-border);
+  border-bottom: 1px solid #E2E2DE;
 }
 .rows :deep(.drop-row:last-child) {
   border-bottom: none;
 }
 h2 {
-  margin: 0 0 0.15rem;
-  font-size: 0.72rem;
+  margin: 0 0 2px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--cd-muted);
-  letter-spacing: 0.04em;
+  color: #6A6A6A;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 .empty {
-  margin: 0.35rem 0 0;
-  color: var(--cd-muted);
-  font-size: 0.8rem;
+  margin: 6px 0 0;
+  color: #6A6A6A;
+  font-size: 13px;
   font-weight: 400;
+  line-height: 1.4;
 }
 .retry {
-  margin-top: 0.4rem;
+  margin-top: 8px;
   align-self: flex-start;
   min-height: 32px;
   border-radius: 8px;
-  border: 1px solid var(--cd-border);
+  border: 1px solid #E2E2DE;
   background: transparent;
-  color: var(--cd-tan);
-  padding: 0.35rem 0.65rem;
-  font-size: 0.75rem;
+  color: #6A6A6A;
+  padding: 6px 10px;
+  font-size: 12px;
   cursor: pointer;
 }
 </style>

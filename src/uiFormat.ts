@@ -55,10 +55,10 @@ export function objectiveStatusLabel(
   return 'UNKNOWN'
 }
 
-/** Compact Home-list status. No pill/marketing language. */
+/** Compact Home-list status. Plain text — no pills. */
 export function homeStatusLabel(
   status: DropStatusLabel | 'Unknown',
-  drop: DropRecord,
+  _drop: DropRecord,
 ): string {
   if (status === 'Claimed')
     return 'Claimed'
@@ -66,12 +66,8 @@ export function homeStatusLabel(
     return 'Successful'
   if (status === 'Expired')
     return 'Expired'
-  if (status === 'Active') {
-    const pct = Math.floor(progressRatio(drop.buyerCount, drop.goal))
-    if (pct >= 70)
-      return `${pct}%`
+  if (status === 'Active')
     return 'Active'
-  }
   return 'Unknown'
 }
 

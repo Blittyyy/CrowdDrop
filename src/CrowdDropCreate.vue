@@ -136,20 +136,15 @@ function openDrop() {
 </script>
 
 <template>
-  <div class="home">
+  <div class="home" :class="{ creating }">
     <header class="top">
       <p class="brand">CrowdDrop</p>
-      <WalletBar compact :extra-busy="busy" />
+      <WalletBar compact utility :extra-busy="busy" />
     </header>
 
     <section v-if="!creating" class="intro">
-      <div class="intro-main">
-        <div class="intro-copy">
-          <p class="tagline">Pool together. Unlock the deal.</p>
-          <p class="support">Create or join a Drop with USDT.</p>
-        </div>
-        <button type="button" class="new-drop" @click="openCreate">+ New Drop</button>
-      </div>
+      <p class="tagline">Pool together. Unlock the deal.</p>
+      <button type="button" class="new-drop" @click="openCreate">+ New Drop</button>
     </section>
 
     <section v-else class="create-panel">
@@ -206,67 +201,58 @@ function openDrop() {
 .home {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0;
+  font-family: Inter, system-ui, sans-serif;
+  color: #141414;
 }
 .top {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.65rem;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 .brand {
   margin: 0;
-  font-family: var(--cd-font-serif);
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--cd-cream);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: #141414;
   letter-spacing: -0.02em;
 }
 .intro {
-  margin-bottom: 0.15rem;
-}
-.intro-main {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-}
-.intro-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
+  gap: 10px;
+  margin-bottom: 0;
 }
 .tagline {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--cd-cream);
-  line-height: 1.3;
-}
-.support {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--cd-tan);
+  color: #141414;
   line-height: 1.35;
+  max-width: 13.5rem;
 }
 .new-drop {
   flex: 0 0 auto;
-  min-height: 32px;
-  margin-top: 0.05rem;
-  padding: 0.35rem 0.65rem;
+  min-height: 36px;
+  padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid var(--cd-orange);
+  border: 1px solid #C94E12;
   background: transparent;
-  color: var(--cd-orange);
-  font-size: 0.78rem;
+  color: #C94E12;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
 }
 .new-drop:active {
-  background: rgba(210, 101, 47, 0.12);
+  background: #F3EBE4;
+}
+.home.creating .top {
+  margin-bottom: 0.65rem;
 }
 .lede {
   margin: 0;
@@ -284,6 +270,8 @@ function openDrop() {
   border-radius: var(--cd-radius);
   padding: 1rem;
   margin-bottom: 0.5rem;
+  color: var(--cd-cream);
+  font-family: var(--cd-font-sans);
 }
 .create-title {
   margin: 0;

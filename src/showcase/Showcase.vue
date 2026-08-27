@@ -1,135 +1,162 @@
 <script setup lang="ts">
-import VariantA from './VariantA.vue'
-import VariantB from './VariantB.vue'
-import VariantC from './VariantC.vue'
-import VariantD from './VariantD.vue'
-import FeedbackOverlay from './FeedbackOverlay.vue'
+import {
+  DROP_ACTIVE,
+  DROP_CLAIMED,
+  DROP_EXPIRED,
+  DROP_SUCCESS,
+  SELLER_SHORT,
+} from './fixtures'
+import CreateScreens from './screens/CreateScreens.vue'
+import DropDetailScreen from './screens/DropDetailScreen.vue'
+import HomeScreen from './screens/HomeScreen.vue'
+import SystemScreens from './screens/SystemScreens.vue'
 
-const variants = [
-  {
-    id: 'A',
-    title: 'Variant A — Ledger',
-    thesis: 'Dense payment/statement grammar. Tabular rows: Drop ID, contribution, fill fraction, time left.',
-  },
-  {
-    id: 'B',
-    title: 'Variant B — Seats',
-    thesis: 'Participant-slot map. Capacity circles are the primary signal; money and deadline support them.',
-  },
-  {
-    id: 'C',
-    title: 'Variant C — Utility',
-    thesis: 'Extreme native-wallet minimalism. Almost no chrome; Drops appear as plain tappable lines.',
-  },
-  {
-    id: 'D',
-    title: 'Variant D — Urgency',
-    thesis: 'Deadline-first index. Time remaining leads each row; money is secondary; hash marks show fill.',
-  },
-] as const
+const activeSellerDrop = { ...DROP_ACTIVE, sellerShort: SELLER_SHORT }
+const successSellerDrop = { ...DROP_SUCCESS, sellerShort: SELLER_SHORT }
+const claimedDrop = { ...DROP_CLAIMED, sellerShort: SELLER_SHORT }
+const expiredSellerDrop = { ...DROP_EXPIRED, sellerShort: SELLER_SHORT }
 </script>
 
 <template>
   <div class="lab">
     <header class="lab-head">
-      <p class="kicker">CrowdDrop design lab</p>
-      <h1>Home screen exploration</h1>
-      <p class="brief">
-        Fake static data only. No wallet calls. No chain state.
-        Compare four information architectures on your phone, then tell the agent which direction to pursue.
-      </p>
+      <h1>CrowdDrop · State gallery</h1>
+      <p>Treatment 2 — Light / Orange · final refinement · static fixtures only</p>
       <p class="path">Preview: <code>/showcase</code></p>
     </header>
 
-    <section
-      v-for="v in variants"
-      :id="'variant-' + v.id"
-      :key="v.id"
-      class="block"
-      :data-variant="v.id"
-    >
-      <div class="block-head">
-        <h2>{{ v.title }}</h2>
-        <p>{{ v.thesis }}</p>
-      </div>
-
-      <VariantA v-if="v.id === 'A'" :label="v.title" :thesis="v.thesis" />
-      <VariantB v-else-if="v.id === 'B'" :label="v.title" :thesis="v.thesis" />
-      <VariantC v-else-if="v.id === 'C'" :label="v.title" :thesis="v.thesis" />
-      <VariantD v-else :label="v.title" :thesis="v.thesis" />
+    <section class="cell">
+      <h2 class="label">Active Buyer — Header A</h2>
+      <p class="sub">CrowdDrop wordmark + wallet row kept</p>
+      <DropDetailScreen :drop="DROP_ACTIVE" mode="active-buyer" :show-app-header="true" />
     </section>
 
-    <footer class="lab-foot">
-      Reply in chat with your preferred variant (A / B / C / D) and what to keep or change.
-      Do not treat this page as production UI.
-    </footer>
+    <section class="cell">
+      <h2 class="label">Active Buyer — Header B</h2>
+      <p class="sub">Detail starts at ← Drop #14 · no repeated wordmark</p>
+      <DropDetailScreen :drop="DROP_ACTIVE" mode="active-buyer" :show-app-header="false" />
+    </section>
 
-    <FeedbackOverlay target-name="CrowdDrop Home" />
+    <section class="cell">
+      <h2 class="label">Home</h2>
+      <HomeScreen />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Active Buyer</h2>
+      <p class="sub">Approval required</p>
+      <DropDetailScreen :drop="DROP_ACTIVE" mode="active-buyer" />
+      <p class="sub">After approval</p>
+      <DropDetailScreen :drop="DROP_ACTIVE" mode="active-buyer-join" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Joined Buyer</h2>
+      <DropDetailScreen :drop="DROP_ACTIVE" mode="joined-buyer" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Active Seller</h2>
+      <DropDetailScreen :drop="activeSellerDrop" mode="active-seller" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Successful Seller</h2>
+      <DropDetailScreen :drop="successSellerDrop" mode="successful-seller" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Successful Buyer</h2>
+      <DropDetailScreen :drop="DROP_SUCCESS" mode="successful-buyer" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Claimed</h2>
+      <DropDetailScreen :drop="claimedDrop" mode="claimed" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Expired Buyer</h2>
+      <DropDetailScreen :drop="DROP_EXPIRED" mode="expired-buyer" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Expired Seller</h2>
+      <DropDetailScreen :drop="expiredSellerDrop" mode="expired-seller" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Create</h2>
+      <CreateScreens mode="create" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Created</h2>
+      <CreateScreens mode="created" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Disconnected</h2>
+      <SystemScreens mode="disconnected" />
+    </section>
+
+    <section class="cell">
+      <h2 class="label">Wrong Network</h2>
+      <SystemScreens mode="wrong-network" />
+    </section>
   </div>
 </template>
 
 <style scoped>
 .lab {
-  width: min(100%, 440px);
-  margin: 0 auto;
-  padding: 16px 12px 48px;
+  min-height: 100dvh;
+  padding: 20px 16px 48px;
+  background: #1a1a1a;
+  color: #e8e8e8;
   font-family: Inter, system-ui, sans-serif;
-  color: #ece7df;
-  background: #0a0a0a;
-  min-height: 100vh;
 }
 .lab-head {
-  margin-bottom: 22px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #262626;
+  max-width: 420px;
+  margin: 0 auto 28px;
 }
-.kicker {
-  margin: 0 0 4px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #8a8175;
-}
-h1 {
-  margin: 0 0 8px;
-  font-size: 22px;
-  font-weight: 650;
-  letter-spacing: -0.03em;
-}
-.brief,
-.path {
+.lab-head h1 {
   margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.lab-head p {
+  margin: 0;
   font-size: 13px;
-  line-height: 1.45;
-  color: #a89f91;
+  color: #9a9a9a;
+  line-height: 1.4;
+}
+.path {
+  margin-top: 8px !important;
 }
 .path code {
-  color: #e06a35;
   font-size: 12px;
+  color: #c9c9c9;
 }
-.block {
-  margin: 0 0 28px;
+.cell {
+  max-width: 420px;
+  margin: 0 auto 36px;
 }
-.block-head {
-  margin-bottom: 10px;
-}
-.block-head h2 {
-  margin: 0 0 4px;
-  font-size: 15px;
+.label {
+  margin: 0 0 10px;
+  font-size: 13px;
   font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #f0f0f0;
 }
-.block-head p {
-  margin: 0;
+.sub {
+  margin: 0 0 8px;
   font-size: 12px;
-  line-height: 1.4;
-  color: #958b7e;
+  color: #8a8a8a;
 }
-.lab-foot {
-  margin-top: 8px;
-  padding-top: 14px;
-  border-top: 1px solid #262626;
-  font-size: 12px;
-  color: #8a8175;
-  line-height: 1.45;
+.cell .sub + :deep(.phone),
+.cell :deep(.phone) + .sub {
+  margin-top: 14px;
 }
 </style>

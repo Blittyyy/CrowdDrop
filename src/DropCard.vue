@@ -3,11 +3,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { activeCrowdDropNetwork } from './escrowConfig'
 import type { DropSummary } from './dropCatalog'
 import { openDropById } from './lastOpenedDrop'
+import ParticipantDots from './ParticipantDots.vue'
 import {
   formatHomeAmount,
   formatRemainingShort,
   homeStatusLabel,
-  participantDotPlan,
   spotsLeft,
 } from './uiFormat'
 
@@ -29,21 +29,19 @@ const remaining = computed(() => {
 const amount = computed(() =>
   formatHomeAmount(props.summary.drop.contribution, network.tokenDecimals),
 )
-const dots = computed(() =>
-  participantDotPlan(props.summary.drop.buyerCount, props.summary.drop.goal),
-)
 const joinedLine = computed(() => {
-  const joined = `${props.summary.drop.buyerCount.toString()} joined`
+  const joined = props.summary.drop.buyerCount.toString()
+  const goal = props.summary.drop.goal.toString()
   if (props.summary.status !== 'Active')
-    return joined
-  return `${joined} · ${left.value} spot${left.value === 1 ? '' : 's'} left`
+    return `${joined} / ${goal} joined`
+  return `${joined} / ${goal} joined · ${left.value} spot${left.value === 1 ? '' : 's'} left`
 })
 const statusTone = computed(() => {
   if (props.summary.status === 'Successful' || props.summary.status === 'Claimed')
-    return 'success'
+    return 'success' as const
   if (props.summary.status === 'Expired')
-    return 'expired'
-  return 'active'
+    return 'expired' as const
+  return 'orange' as const
 })
 const isQuiet = computed(() =>
   props.summary.status === 'Claimed' || props.summary.status === 'Expired',
@@ -65,30 +63,21 @@ onUnmounted(() => {
   <button
     type="button"
     class="drop-row"
-    :class="{ quiet: isQuiet, success: statusTone === 'success' }"
+    :class="{ quiet: isQuiet }"
     @click="openDropById(summary.id)"
   >
     <div class="row-top">
-      <p class="amount">
-        <span class="value">{{ amount }}</span>
-        <span class="unit">{{ network.tokenSymbol }}</span>
+      <p class="lead">
+        {{ amount }} {{ network.tokenSymbol }} · #{{ summary.id }}
       </p>
       <p class="status" :class="statusTone">{{ statusText }}</p>
     </div>
 
-    <div class="dots" aria-hidden="true">
-      <span
-        v-for="n in dots.filled"
-        :key="'f' + n"
-        class="dot filled"
-      />
-      <span
-        v-for="n in dots.empty"
-        :key="'e' + n"
-        class="dot"
-      />
-      <span v-if="dots.countLabel" class="dot-count">{{ dots.countLabel }}</span>
-    </div>
+    <ParticipantDots
+      :joined="summary.drop.buyerCount"
+      :goal="summary.drop.goal"
+      :tone="isQuiet && statusTone === 'expired' ? 'expired' : (statusTone === 'success' ? 'success' : (isQuiet ? 'muted' : 'orange'))"
+    />
 
     <div class="row-meta">
       <span>{{ joinedLine }}</span>
@@ -101,101 +90,57 @@ onUnmounted(() => {
 .drop-row {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 8px;
   width: 100%;
   margin: 0;
-  padding: 0.7rem 0;
+  padding: 12px 0;
   border: none;
   border-radius: 0;
   background: transparent;
-  color: inherit;
+  color: #141414;
+  font: inherit;
   text-align: left;
   cursor: pointer;
+  min-height: 44px;
   -webkit-tap-highlight-color: transparent;
 }
 .drop-row:active {
   opacity: 0.85;
 }
 .drop-row.quiet {
-  opacity: 0.62;
+  opacity: 0.72;
 }
 .row-top {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 8px;
 }
-.amount {
+.lead {
   margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 0.28rem;
-}
-.value {
-  font-size: 1.05rem;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--cd-cream);
   letter-spacing: -0.01em;
-}
-.unit {
-  font-size: 0.72rem;
-  color: var(--cd-tan);
-  font-weight: 500;
+  color: #141414;
 }
 .status {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--cd-orange);
+  color: #B9430E;
   white-space: nowrap;
 }
 .status.success {
-  color: var(--cd-success-text);
+  color: #1F7A45;
 }
 .status.expired {
-  color: var(--cd-expired);
-}
-.dots {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.28rem;
-  min-height: 0.55rem;
-}
-.dot {
-  width: 0.48rem;
-  height: 0.48rem;
-  border-radius: 50%;
-  border: 1px solid var(--cd-orange);
-  background: transparent;
-  flex: 0 0 auto;
-}
-.dot.filled {
-  background: var(--cd-orange);
-}
-.quiet .dot {
-  border-color: var(--cd-muted);
-}
-.quiet .dot.filled {
-  background: var(--cd-muted);
-  border-color: var(--cd-muted);
-}
-.drop-row.success .dot {
-  border-color: var(--cd-success-text);
-}
-.drop-row.success .dot.filled {
-  background: var(--cd-success-text);
-}
-.dot-count {
-  margin-left: 0.2rem;
-  font-size: 0.68rem;
-  color: var(--cd-muted);
+  color: #A65A16;
 }
 .row-meta {
   display: flex;
   justify-content: space-between;
-  gap: 0.75rem;
-  font-size: 0.72rem;
-  color: var(--cd-tan);
+  gap: 8px;
+  font-size: 12px;
+  color: #6A6A6A;
 }
 </style>

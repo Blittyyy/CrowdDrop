@@ -17,38 +17,54 @@ import {
   walletStatus,
 } from './walletSession'
 
-defineProps<{
+const props = defineProps<{
   extraBusy?: boolean
   compact?: boolean
+  /** Light / Orange utility header treatment (Home). Default keeps legacy dark styling for Detail/Create. */
+  utility?: boolean
 }>()
 
 const network = activeCrowdDropNetwork
 const walletChainLabel = computed(() => walletChainName.value ?? 'Unknown')
+
+const compactMeta = computed(() => {
+  if (walletChecking.value)
+    return 'Checking…'
+  if (walletShortAddress.value && walletOnActiveNetwork.value)
+    return `${network.chainName} · ${walletShortAddress.value}`
+  if (walletShortAddress.value)
+    return props.utility ? 'Wrong network' : `${walletChainLabel.value} · ${walletShortAddress.value}`
+  return props.utility ? `${network.chainName} · Not connected` : `${network.chainName} · not connected`
+})
+
+const compactAction = computed(() => {
+  if (walletChecking.value || (walletAccount.value && walletOnActiveNetwork.value))
+    return null
+  if (walletAccount.value && !walletOnActiveNetwork.value)
+    return `Switch to ${network.chainName}`
+  return walletAccount.value || walletSeenAccount.value ? 'Reconnect' : 'Connect'
+})
 </script>
 
 <template>
-  <div class="wallet" :class="{ compact, wrong: !!walletAccount && !walletOnActiveNetwork }">
+  <div
+    class="wallet"
+    :class="{
+      compact,
+      utility,
+      wrong: !!walletAccount && !walletOnActiveNetwork,
+    }"
+  >
     <div v-if="compact" class="compact-row">
-      <span class="meta">
-        <template v-if="walletChecking">Checking…</template>
-        <template v-else-if="walletShortAddress && walletOnActiveNetwork">
-          {{ network.chainName }} · {{ walletShortAddress }}
-        </template>
-        <template v-else-if="walletShortAddress">
-          {{ walletChainLabel }} · {{ walletShortAddress }}
-        </template>
-        <template v-else>
-          {{ network.chainName }} · not connected
-        </template>
-      </span>
+      <span class="meta">{{ compactMeta }}</span>
       <button
-        v-if="!walletChecking && (!walletAccount || !walletOnActiveNetwork)"
+        v-if="compactAction"
         type="button"
         class="ghost"
         :disabled="walletBusy || extraBusy"
         @click="walletAccount && !walletOnActiveNetwork ? switchWalletNetwork() : connectWallet()"
       >
-        {{ walletAccount && !walletOnActiveNetwork ? `Switch to ${network.chainName}` : (walletAccount || walletSeenAccount ? 'Reconnect' : 'Connect') }}
+        {{ compactAction }}
       </button>
     </div>
 
@@ -92,11 +108,11 @@ const walletChainLabel = computed(() => walletChainName.value ?? 'Unknown')
       </div>
     </template>
 
-    <p v-if="compact && walletError" class="error">{{ walletError }}</p>
-    <p v-if="compact && walletAccount && !walletOnActiveNetwork" class="warn">
+    <p v-if="compact && !utility && walletError" class="error">{{ walletError }}</p>
+    <p v-if="compact && !utility && walletAccount && !walletOnActiveNetwork" class="warn">
       Wrong network — switch to {{ network.chainName }}.
     </p>
-    <p v-if="compact && walletBusy && walletStatus && !walletChecking && !walletReady" class="wait">
+    <p v-if="compact && !utility && walletBusy && walletStatus && !walletChecking && !walletReady" class="wait">
       {{ walletStatus }}
     </p>
   </div>
@@ -185,5 +201,33 @@ pre {
   white-space: pre-wrap;
   font-size: 0.75rem;
   color: var(--cd-muted);
+}
+
+/* Approved Home / utility header */
+.utility.compact {
+  gap: 0;
+}
+.utility .meta {
+  color: #6A6A6A;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.utility.wrong .meta {
+  color: #B9430E;
+}
+.utility .ghost {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #141414;
+  border: 1px solid #E2E2DE;
+  border-radius: 8px;
+  background: #fff;
+}
+.utility.wrong .ghost {
+  border-color: #C94E12;
+  color: #C94E12;
 }
 </style>
