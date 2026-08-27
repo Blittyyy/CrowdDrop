@@ -5,6 +5,7 @@ import { applySavedDrop, resolveAppRoute, wantsHomeScreen, type AppRoute } from 
 import CrowdDropCreate from './CrowdDropCreate.vue'
 import CrowdDropView from './CrowdDropView.vue'
 import DevTools from './DevTools.vue'
+import Showcase from './showcase/Showcase.vue'
 import { readLastOpenedDrop, saveLastOpenedDrop } from './lastOpenedDrop'
 import { initWalletSession } from './walletSession'
 
@@ -14,6 +15,8 @@ function readRoute(): AppRoute {
     saveLastOpenedDrop(fromUrl.dropParam)
     return fromUrl
   }
+  if (fromUrl.name === 'showcase' || fromUrl.name === 'dev')
+    return fromUrl
   if (wantsHomeScreen(window.location.href))
     return fromUrl
   const restored = applySavedDrop(fromUrl, readLastOpenedDrop())
@@ -30,14 +33,18 @@ function readRoute(): AppRoute {
 const route = ref<AppRoute>(readRoute())
 const routeKey = computed(() => JSON.stringify(route.value))
 const isDev = computed(() => route.value.name === 'dev')
+const isShowcase = computed(() => route.value.name === 'showcase')
 
 function syncRoute() {
   route.value = readRoute()
 }
 
 onMounted(() => {
-  init({ timeout: 10_000 }).catch(() => undefined)
-  void initWalletSession()
+  // Showcase is static fake UI — skip wallet/SDK noise there.
+  if (!isShowcase.value) {
+    init({ timeout: 10_000 }).catch(() => undefined)
+    void initWalletSession()
+  }
   syncRoute()
   window.addEventListener('popstate', syncRoute)
   window.addEventListener('hashchange', syncRoute)
@@ -52,11 +59,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="shell" :class="isDev ? 'dev-shell' : 'product-shell'">
-    <CrowdDropCreate v-if="route.name === 'create'" :key="routeKey" />
+  <main
+    class="shell"
+    :class="{
+      'dev-shell': isDev,
+      'product-shell': !isDev && !isShowcase,
+      'showcase-shell': isShowcase,
+    }"
+  >
+    <Showcase v-if="route.name === 'showcase'" :key="routeKey" />
+    <CrowdDropCreate v-else-if="route.name === 'create'" :key="routeKey" />
     <CrowdDropView v-else-if="route.name === 'drop'" :key="routeKey" :drop-param="route.dropParam" />
     <DevTools v-else />
-    <p v-if="route.name !== 'dev'" class="dev-link">
+    <p v-if="route.name !== 'dev' && route.name !== 'showcase'" class="dev-link">
       <details>
         <summary>More</summary>
         <a href="/dev">Development tools</a>
@@ -69,7 +84,14 @@ onUnmounted(() => {
 .shell {
   width: min(100%, var(--cd-max));
   margin: 0 auto;
-  padding: 1.1rem 1rem 2rem;
+  padding: 0.85rem 1rem 1.75rem;
+}
+.showcase-shell {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  background: #0a0a0a;
 }
 .dev-shell {
   width: min(100%, 40rem);
@@ -80,15 +102,21 @@ onUnmounted(() => {
   margin-top: 0.5rem;
 }
 .dev-link {
-  margin-top: 1.75rem;
-  font-size: 0.78rem;
+  margin-top: 1.5rem;
+  font-size: 0.72rem;
   color: var(--cd-muted);
+  opacity: 0.7;
 }
 .dev-link summary {
   cursor: pointer;
   color: var(--cd-muted);
+  list-style: none;
+}
+.dev-link summary::-webkit-details-marker {
+  display: none;
 }
 .dev-link a {
-  color: var(--cd-tan);
+  color: var(--cd-muted);
+  font-size: 0.72rem;
 }
 </style>

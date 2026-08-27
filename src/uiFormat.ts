@@ -55,6 +55,71 @@ export function objectiveStatusLabel(
   return 'UNKNOWN'
 }
 
+/** Compact Home-list status. No pill/marketing language. */
+export function homeStatusLabel(
+  status: DropStatusLabel | 'Unknown',
+  drop: DropRecord,
+): string {
+  if (status === 'Claimed')
+    return 'Claimed'
+  if (status === 'Successful')
+    return 'Successful'
+  if (status === 'Expired')
+    return 'Expired'
+  if (status === 'Active') {
+    const pct = Math.floor(progressRatio(drop.buyerCount, drop.goal))
+    if (pct >= 70)
+      return `${pct}%`
+    return 'Active'
+  }
+  return 'Unknown'
+}
+
+/** Display-only compact money for Home rows, e.g. $5 or $0.10 */
+export function formatHomeAmount(value: bigint, decimals: number): string {
+  const raw = formatUnits(value, decimals)
+  const negative = raw.startsWith('-')
+  const unsigned = negative ? raw.slice(1) : raw
+  const [whole, fraction = ''] = unsigned.split('.')
+  const trimmedFrac = fraction.replace(/0+$/, '')
+  const shown = trimmedFrac.length === 0 ? whole : `${whole}.${trimmedFrac}`
+  return `${negative ? '-' : ''}$${shown}`
+}
+
+export const MAX_PARTICIPANT_DOTS = 20
+
+export type ParticipantDotPlan = {
+  filled: number
+  empty: number
+  /** Shown when goal is too large for one-dot-per-slot. */
+  countLabel: string | null
+}
+
+/** Signature Home progress: one circle per slot, or a capped set for large goals. */
+export function participantDotPlan(buyerCount: bigint, goal: bigint): ParticipantDotPlan {
+  const joined = Number(buyerCount < 0n ? 0n : buyerCount)
+  const total = Number(goal < 0n ? 0n : goal)
+  if (!Number.isFinite(total) || total <= 0)
+    return { filled: 0, empty: 0, countLabel: null }
+
+  if (total <= MAX_PARTICIPANT_DOTS) {
+    const filled = Math.min(joined, total)
+    return {
+      filled,
+      empty: Math.max(total - filled, 0),
+      countLabel: null,
+    }
+  }
+
+  const cappedFilled = Math.round((Math.min(joined, total) / total) * MAX_PARTICIPANT_DOTS)
+  const filled = Math.max(0, Math.min(MAX_PARTICIPANT_DOTS, cappedFilled))
+  return {
+    filled,
+    empty: Math.max(0, MAX_PARTICIPANT_DOTS - filled),
+    countLabel: `${Math.min(joined, total)}/${total}`,
+  }
+}
+
 export function formatRemainingShort(deadlineSec: bigint | number, nowSec: number): string | null {
   const left = Number(deadlineSec) - nowSec
   if (left <= 0)

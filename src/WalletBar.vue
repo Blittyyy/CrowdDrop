@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { activeCrowdDropNetwork } from './escrowConfig'
 import {
   connectWallet,
   switchWalletNetwork,
   walletAccount,
   walletBusy,
+  walletChainName,
   walletChecking,
   walletError,
   walletErrorDetail,
   walletOnActiveNetwork,
+  walletReady,
   walletSeenAccount,
   walletShortAddress,
   walletStatus,
@@ -20,6 +23,7 @@ defineProps<{
 }>()
 
 const network = activeCrowdDropNetwork
+const walletChainLabel = computed(() => walletChainName.value ?? 'Unknown')
 </script>
 
 <template>
@@ -27,9 +31,14 @@ const network = activeCrowdDropNetwork
     <div v-if="compact" class="compact-row">
       <span class="meta">
         <template v-if="walletChecking">Checking…</template>
+        <template v-else-if="walletShortAddress && walletOnActiveNetwork">
+          {{ network.chainName }} · {{ walletShortAddress }}
+        </template>
+        <template v-else-if="walletShortAddress">
+          {{ walletChainLabel }} · {{ walletShortAddress }}
+        </template>
         <template v-else>
-          {{ network.chainName }}<template v-if="walletShortAddress"> · {{ walletShortAddress }}</template>
-          <template v-else> · not connected</template>
+          {{ network.chainName }} · not connected
         </template>
       </span>
       <button
@@ -55,7 +64,7 @@ const network = activeCrowdDropNetwork
           Switch to {{ network.chainName }} before continuing.
         </p>
       </template>
-      <p v-if="walletStatus && !walletChecking" class="wait">{{ walletStatus }}</p>
+      <p v-if="walletStatus && !walletChecking && !walletReady" class="wait">{{ walletStatus }}</p>
       <p v-if="walletError" class="error">{{ walletError }}</p>
       <details v-if="walletErrorDetail" class="dev">
         <summary>Developer details</summary>
@@ -87,7 +96,9 @@ const network = activeCrowdDropNetwork
     <p v-if="compact && walletAccount && !walletOnActiveNetwork" class="warn">
       Wrong network — switch to {{ network.chainName }}.
     </p>
-    <p v-if="compact && walletStatus && !walletChecking" class="wait">{{ walletStatus }}</p>
+    <p v-if="compact && walletBusy && walletStatus && !walletChecking && !walletReady" class="wait">
+      {{ walletStatus }}
+    </p>
   </div>
 </template>
 

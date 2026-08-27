@@ -31,4 +31,11 @@ assert.equal(wantsHomeScreen('https://usecrowddrop.xyz/'), false)
 assert.equal(wantsHomeScreen('https://usecrowddrop.xyz/?drop=3'), false)
 assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/?home=1'), { name: 'create' })
 
-console.log(`appRoute: ${APP_ROUTE_CASES.length + 12} checks passed`)
+assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/showcase'), { name: 'showcase' })
+assert.deepEqual(resolveAppRoute('https://usecrowddrop.xyz/showcase/'), { name: 'showcase' })
+assert.deepEqual(
+  applySavedDrop(resolveAppRoute('https://usecrowddrop.xyz/showcase'), '3'),
+  { name: 'showcase' },
+)
+
+console.log(`appRoute: ${APP_ROUTE_CASES.length + 15} checks passed`)

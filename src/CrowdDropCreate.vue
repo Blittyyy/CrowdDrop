@@ -142,15 +142,14 @@ function openDrop() {
       <WalletBar compact :extra-busy="busy" />
     </header>
 
-    <section v-if="!creating" class="hero">
-      <h1>
-        Pool together.<br>
-        Unlock the deal.
-      </h1>
-      <p class="lede">Create or join a Drop and reach your goal together.</p>
-      <button type="button" class="primary create-cta" @click="openCreate">
-        + Create a Drop
-      </button>
+    <section v-if="!creating" class="intro">
+      <div class="intro-main">
+        <div class="intro-copy">
+          <p class="tagline">Pool together. Unlock the deal.</p>
+          <p class="support">Create or join a Drop with USDT.</p>
+        </div>
+        <button type="button" class="new-drop" @click="openCreate">+ New Drop</button>
+      </div>
     </section>
 
     <section v-else class="create-panel">
@@ -211,33 +210,63 @@ function openDrop() {
 }
 .top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.65rem;
 }
 .brand {
   margin: 0;
   font-family: var(--cd-font-serif);
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   font-weight: 600;
   color: var(--cd-cream);
   letter-spacing: -0.02em;
 }
-.hero {
+.intro {
+  margin-bottom: 0.15rem;
+}
+.intro-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.intro-copy {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  margin-bottom: 0.5rem;
+  gap: 0.2rem;
+  min-width: 0;
 }
-.hero h1 {
+.tagline {
   margin: 0;
-  font-family: var(--cd-font-serif);
-  font-size: clamp(2rem, 7vw, 2.55rem);
+  font-size: 0.95rem;
   font-weight: 600;
-  line-height: 1.08;
-  letter-spacing: -0.03em;
   color: var(--cd-cream);
+  line-height: 1.3;
+}
+.support {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--cd-tan);
+  line-height: 1.35;
+}
+.new-drop {
+  flex: 0 0 auto;
+  min-height: 32px;
+  margin-top: 0.05rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--cd-orange);
+  background: transparent;
+  color: var(--cd-orange);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.new-drop:active {
+  background: rgba(210, 101, 47, 0.12);
 }
 .lede {
   margin: 0;
@@ -245,9 +274,6 @@ function openDrop() {
   font-size: 0.95rem;
   line-height: 1.45;
   max-width: 22rem;
-}
-.create-cta {
-  margin-top: 0.35rem;
 }
 .create-panel {
   display: flex;

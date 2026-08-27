@@ -2,6 +2,7 @@ export type AppRoute =
   | { name: 'create' }
   | { name: 'drop', dropParam: string }
   | { name: 'dev' }
+  | { name: 'showcase' }
 
 function normalizePath(pathname: string): string {
   const path = pathname.replace(/\/+$/, '')
@@ -41,6 +42,9 @@ export function resolveAppRoute(href: string): AppRoute {
   const path = normalizePath(url.pathname)
   const hash = parseHash(url.hash)
   const hashPath = hash.path ? normalizePath(hash.path) : ''
+
+  if (path === '/showcase' || hashPath === '/showcase')
+    return { name: 'showcase' }
 
   if (path === '/dev' || hashPath === '/dev')
     return { name: 'dev' }
@@ -88,5 +92,7 @@ export const APP_ROUTE_CASES: Array<{ href: string, route: AppRoute }> = [
   { href: 'https://usecrowddrop.xyz/?drop=999', route: { name: 'drop', dropParam: '999' } },
   { href: 'https://usecrowddrop.xyz/dev', route: { name: 'dev' } },
   { href: 'https://usecrowddrop.xyz/dev/', route: { name: 'dev' } },
+  { href: 'https://usecrowddrop.xyz/showcase', route: { name: 'showcase' } },
+  { href: 'https://usecrowddrop.xyz/showcase/', route: { name: 'showcase' } },
   { href: 'https://usecrowddrop.xyz/#/?drop=3', route: { name: 'drop', dropParam: '3' } },
 ]

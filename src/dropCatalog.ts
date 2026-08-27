@@ -145,12 +145,23 @@ async function idsFromNextDropId(limit: bigint): Promise<string[]> {
 }
 
 export async function loadCommunityDrops(): Promise<DropSummary[]> {
-  let ids: string[]
+  let ids: string[] = []
   try {
     ids = newestFirst(await eventDropIds('DropCreated'))
   }
   catch {
-    ids = await idsFromNextDropId(BigInt(COMMUNITY_DROP_LIMIT))
+    ids = []
+  }
+  // Public RPCs often return an empty log set (without throwing) over large
+  // block ranges. Fall back to nextDropId scanning so active Drops still appear.
+  if (ids.length === 0) {
+    try {
+      ids = await idsFromNextDropId(BigInt(COMMUNITY_DROP_LIMIT))
+    }
+    catch {
+      if (ids.length === 0)
+        throw new Error('Could not discover community drops.')
+    }
   }
   const candidates = newestFirst(ids).slice(0, COMMUNITY_DROP_LIMIT)
   const summaries: DropSummary[] = []
