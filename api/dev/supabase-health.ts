@@ -12,31 +12,24 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
   }
 
   try {
-    const { readSupabaseEnv } = await import('../lib/supabaseEnv.js')
-    const env = readSupabaseEnv()
-    if (!env.ok) {
-      res.statusCode = 503
-      res.end(JSON.stringify(env))
-      return
-    }
+    const { runSupabaseHealthCheck } = await import('../lib/supabaseHealthCheck.js')
+    const health = await runSupabaseHealthCheck()
 
-    const { getSupabaseAdmin } = await import('../lib/supabaseServer.js')
-    const admin = getSupabaseAdmin()
-    if (!admin.ok) {
-      res.statusCode = 503
-      res.end(JSON.stringify(admin))
-      return
-    }
+    const status = health.ok
+      ? 200
+      : health.error === 'supabase_not_configured' ? 503 : 503
 
-    const { checkSupabaseHealth } = await import('../lib/supabaseHealth.js')
-    const health = await checkSupabaseHealth(admin.client)
-
-    res.statusCode = health.ok ? 200 : 503
+    res.statusCode = status
     res.end(JSON.stringify(health))
   }
   catch (error) {
-    console.error('[supabase-health]', error)
+    console.error('[supabase-health] handler', error)
     res.statusCode = 500
-    res.end(JSON.stringify({ ok: false, error: 'supabase_health_check_failed' }))
+    res.end(JSON.stringify({
+      ok: false,
+      error: 'supabase_health_check_failed',
+      stage: 'handler',
+      detail: error instanceof Error ? error.message : 'unknown',
+    }))
   }
 }

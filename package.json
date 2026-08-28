@@ -41,6 +41,9 @@
     "viem": "^2.31.7",
     "vue": "^3.5.13"
   },
+  "engines": {
+    "node": "22.x"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
     "@openzeppelin/contracts": "^5.6.1",
