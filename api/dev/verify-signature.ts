@@ -1,10 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Hex } from 'viem'
-import {
-  AUTH_TEST_ACTION,
-  parseProviderTypedData,
-  verifyCrowdDropAuthSignature,
-} from '../lib/crowdDropAuthVerify'
 
 type ApiRequest = IncomingMessage & {
   method?: string
@@ -40,6 +35,12 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
   }
 
   try {
+    const {
+      AUTH_TEST_ACTION,
+      parseProviderTypedData,
+      verifyCrowdDropAuthSignature,
+    } = await import('../lib/crowdDropAuthVerify.js')
+
     const body = await readJsonBody(req)
     if (!body || typeof body !== 'object') {
       res.statusCode = 400

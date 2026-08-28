@@ -1,13 +1,8 @@
 /**
  * Server-only CrowdDrop EIP-712 verification for Vercel API routes.
- * Kept separate from src/ so API handlers never import .ts-extension src modules.
+ * viem is loaded dynamically so the function module initializes cleanly.
  */
-import {
-  getAddress,
-  recoverTypedDataAddress,
-  verifyTypedData,
-  type Hex,
-} from 'viem'
+import type { Hex } from 'viem'
 
 export const AUTH_TEST_ACTION = 'auth_test'
 
@@ -40,6 +35,10 @@ type CrowdDropAuthTypedData = {
   }
 }
 
+async function viem() {
+  return import('viem')
+}
+
 function buildTypedData(params: {
   action: string
   wallet: string
@@ -57,7 +56,7 @@ function buildTypedData(params: {
     primaryType: 'Auth',
     message: {
       action: params.action,
-      wallet: getAddress(params.wallet),
+      wallet: params.wallet as `0x${string}`,
       nonce: params.nonce,
       expiresAt: BigInt(params.expiresAt),
     },
@@ -88,9 +87,13 @@ export function parseProviderTypedData(input: unknown): CrowdDropAuthTypedData {
   if (expiresAt === null || expiresAt < 0n)
     throw new Error('Invalid expiresAt.')
 
+  const wallet = String(raw.message?.wallet ?? '')
+  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet))
+    throw new Error('Invalid wallet.')
+
   return buildTypedData({
     action: String(raw.message?.action ?? ''),
-    wallet: String(raw.message?.wallet ?? ''),
+    wallet,
     nonce: String(raw.message?.nonce ?? ''),
     expiresAt: Number(expiresAt),
   })
@@ -108,8 +111,11 @@ export async function verifyCrowdDropAuthSignature(
     nowSeconds?: number
   } = {},
 ): Promise<VerifyCrowdDropAuthResult> {
+  const { getAddress, recoverTypedDataAddress, verifyTypedData } = await viem()
   const nowSeconds = options.nowSeconds ?? Math.floor(Date.now() / 1000)
   const expectedAction = options.expectedAction ?? AUTH_TEST_ACTION
+
+  typedData.message.wallet = getAddress(typedData.message.wallet)
 
   if (typedData.domain.chainId !== POLYGON_CHAIN_ID)
     return { ok: false, reason: 'Invalid chainId.' }
