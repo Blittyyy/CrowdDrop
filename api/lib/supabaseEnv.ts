@@ -6,6 +6,7 @@ export const FORBIDDEN_CLIENT_ENV_KEYS = [
   SUPABASE_SERVICE_ROLE_KEY_ENV,
   'SUPABASE_SERVICE_ROLE',
   'SERVICE_ROLE_KEY',
+  'CROWDDROP_AUTH_SECRET',
 ] as const
 
 export type SupabaseEnvResult =

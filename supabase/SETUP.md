@@ -65,6 +65,13 @@ The **`anon` `public`** key is for future client-side use if needed. This founda
 |------|-------|--------------|
 | `SUPABASE_URL` | Project URL from step 4 | Production, Preview, Development |
 | `SUPABASE_SERVICE_ROLE_KEY` | `service_role` secret from step 5 | Production, Preview, Development |
+| `CROWDDROP_AUTH_SECRET` | Random 32+ byte secret (server-only) | Production, Preview, Development |
+
+Generate `CROWDDROP_AUTH_SECRET` with a password manager or:
+
+```bash
+openssl rand -base64 32
+```
 
 Do **not** prefix with `VITE_`.
 

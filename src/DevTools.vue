@@ -6,6 +6,7 @@ import TokenEscrowTest from './TokenEscrowTest.vue'
 import {
   AUTH_TEST_ACTION,
   buildCrowdDropAuthTypedData,
+  SELLER_UPLOAD_ACTION,
   toProviderTypedDataPayload,
 } from './signing/crowdDropAuthTypedData'
 import { SignCancelledError, requestSignTypedDataV4 } from './signing/requestTypedDataSignature'
@@ -40,6 +41,22 @@ type SupabaseHealthUiState = 'idle' | 'running' | 'success' | 'failure'
 const supabaseState = ref<SupabaseHealthUiState>('idle')
 const supabaseError = ref<string | null>(null)
 const supabaseHealth = ref<Record<string, unknown> | null>(null)
+
+type SellerAuthState = 'idle' | 'running' | 'authenticated' | 'failure' | 'cancelled'
+type DraftUploadState = 'idle' | 'running' | 'success' | 'failure'
+
+const sellerAuthState = ref<SellerAuthState>('idle')
+const sellerAuthError = ref<string | null>(null)
+const sellerSessionWallet = ref<string | null>(null)
+const sellerSessionExpiresAt = ref<number | null>(null)
+
+const draftTitle = ref('')
+const draftDescription = ref('')
+const draftCover = ref<File | null>(null)
+const draftAsset = ref<File | null>(null)
+const draftUploadState = ref<DraftUploadState>('idle')
+const draftUploadError = ref<string | null>(null)
+const draftResult = ref<Record<string, unknown> | null>(null)
 
 onMounted(async () => {
   ethereumAvailable.value = Boolean(window.ethereum)
@@ -265,6 +282,160 @@ async function checkSupabaseSetup() {
     supabaseError.value = formatWalletError(error)
   }
 }
+
+function resetSellerAuth() {
+  sellerAuthState.value = 'idle'
+  sellerAuthError.value = null
+  sellerSessionWallet.value = null
+  sellerSessionExpiresAt.value = null
+}
+
+function onDraftCoverChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  draftCover.value = input.files?.[0] ?? null
+}
+
+function onDraftAssetChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  draftAsset.value = input.files?.[0] ?? null
+}
+
+async function authenticateSeller() {
+  resetSellerAuth()
+  sellerAuthState.value = 'running'
+
+  const provider = window.ethereum
+  if (!provider || !evmAddress.value) {
+    sellerAuthState.value = 'failure'
+    sellerAuthError.value = 'Connect an EVM wallet first.'
+    return
+  }
+
+  const wallet = evmAddress.value
+
+  try {
+    const challengeResponse = await fetch('/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ wallet, action: SELLER_UPLOAD_ACTION }),
+    })
+    const challenge = await challengeResponse.json() as {
+      ok?: boolean
+      nonce?: string
+      expiresAt?: number
+      reason?: string
+    }
+    if (!challengeResponse.ok || !challenge.nonce || typeof challenge.expiresAt !== 'number') {
+      sellerAuthState.value = 'failure'
+      sellerAuthError.value = challenge.reason ?? 'Could not create seller auth challenge.'
+      return
+    }
+
+    const typedData = buildCrowdDropAuthTypedData({
+      action: SELLER_UPLOAD_ACTION,
+      wallet,
+      nonce: challenge.nonce,
+      expiresAt: challenge.expiresAt,
+    })
+    const signature = await requestSignTypedDataV4(provider, wallet, typedData)
+    const providerPayload = toProviderTypedDataPayload(typedData)
+
+    const verifyResponse = await fetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        typedData: providerPayload,
+        signature,
+      }),
+    })
+    const verifyPayload = await verifyResponse.json() as {
+      ok?: boolean
+      wallet?: string
+      expiresAt?: number
+      reason?: string
+    }
+
+    if (!verifyResponse.ok || !verifyPayload.ok || !verifyPayload.wallet) {
+      sellerAuthState.value = 'failure'
+      sellerAuthError.value = verifyPayload.reason ?? 'Seller authentication failed.'
+      return
+    }
+
+    sellerAuthState.value = 'authenticated'
+    sellerSessionWallet.value = verifyPayload.wallet
+    sellerSessionExpiresAt.value = verifyPayload.expiresAt ?? null
+  }
+  catch (error) {
+    if (error instanceof SignCancelledError) {
+      sellerAuthState.value = 'cancelled'
+      sellerAuthError.value = 'Signature cancelled.'
+      return
+    }
+    sellerAuthState.value = 'failure'
+    sellerAuthError.value = formatWalletError(error)
+  }
+}
+
+function resetDraftUpload() {
+  draftUploadState.value = 'idle'
+  draftUploadError.value = null
+  draftResult.value = null
+}
+
+async function uploadDraftProduct() {
+  resetDraftUpload()
+  draftUploadState.value = 'running'
+
+  if (sellerAuthState.value !== 'authenticated' || !sellerSessionWallet.value) {
+    draftUploadState.value = 'failure'
+    draftUploadError.value = 'Authenticate as seller first.'
+    return
+  }
+
+  if (!draftTitle.value.trim() || !draftDescription.value.trim()) {
+    draftUploadState.value = 'failure'
+    draftUploadError.value = 'Title and description are required.'
+    return
+  }
+
+  if (!draftCover.value || !draftAsset.value) {
+    draftUploadState.value = 'failure'
+    draftUploadError.value = 'Cover image and digital file are required.'
+    return
+  }
+
+  try {
+    const form = new FormData()
+    form.append('title', draftTitle.value.trim())
+    form.append('description', draftDescription.value.trim())
+    form.append('cover', draftCover.value)
+    form.append('asset', draftAsset.value)
+
+    const response = await fetch('/api/products/draft', {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    })
+    const payload = await response.json() as Record<string, unknown>
+
+    if (!response.ok || payload.ok !== true) {
+      draftUploadState.value = 'failure'
+      draftUploadError.value = typeof payload.reason === 'string'
+        ? payload.reason
+        : 'Product draft upload failed.'
+      return
+    }
+
+    draftUploadState.value = 'success'
+    draftResult.value = payload
+  }
+  catch (error) {
+    draftUploadState.value = 'failure'
+    draftUploadError.value = formatWalletError(error)
+  }
+}
 </script>
 
 <template>
@@ -366,6 +537,73 @@ async function checkSupabaseSetup() {
       </details>
     </section>
 
+    <section>
+      <h2>Digital Product Draft Test</h2>
+      <p>Development only. Authenticate seller, upload cover + private asset, create a draft product row.</p>
+      <p>Wallet: {{ evmAddress ? shortenAddress(evmAddress) : 'not connected' }}</p>
+
+      <button
+        type="button"
+        :disabled="sellerAuthState === 'running' || !ethereumAvailable || !evmAddress"
+        @click="authenticateSeller"
+      >
+        {{ sellerAuthState === 'running' ? 'Waiting for signature…' : 'Authenticate Seller' }}
+      </button>
+
+      <div v-if="sellerAuthState === 'authenticated'" class="sign-result sign-result--ok">
+        <p><strong>Seller authenticated</strong></p>
+        <p>{{ sellerSessionWallet }}</p>
+        <p v-if="sellerSessionExpiresAt">Session expires: {{ new Date(sellerSessionExpiresAt * 1000).toLocaleString() }}</p>
+      </div>
+
+      <div v-else-if="sellerAuthState === 'failure'" class="sign-result sign-result--fail">
+        <p>{{ sellerAuthError }}</p>
+      </div>
+
+      <div v-else-if="sellerAuthState === 'cancelled'" class="sign-result sign-result--cancel">
+        <p>{{ sellerAuthError }}</p>
+      </div>
+
+      <div class="draft-form">
+        <label>
+          Product title
+          <input v-model="draftTitle" type="text" maxlength="80" :disabled="sellerAuthState !== 'authenticated'">
+        </label>
+        <label>
+          Description
+          <textarea v-model="draftDescription" rows="3" maxlength="500" :disabled="sellerAuthState !== 'authenticated'" />
+        </label>
+        <label>
+          Cover image
+          <input type="file" accept="image/png,image/jpeg,image/webp" :disabled="sellerAuthState !== 'authenticated'" @change="onDraftCoverChange">
+        </label>
+        <label>
+          Digital file
+          <input type="file" :disabled="sellerAuthState !== 'authenticated'" @change="onDraftAssetChange">
+        </label>
+      </div>
+
+      <button
+        type="button"
+        :disabled="draftUploadState === 'running' || sellerAuthState !== 'authenticated'"
+        @click="uploadDraftProduct"
+      >
+        {{ draftUploadState === 'running' ? 'Uploading…' : 'Upload Draft Product' }}
+      </button>
+
+      <div v-if="draftUploadState === 'success'" class="sign-result sign-result--ok">
+        <p><strong>Product draft created</strong></p>
+        <p>Draft ID: {{ draftResult?.draftId }}</p>
+        <p>File type: {{ draftResult?.fileTypeLabel }}</p>
+        <p>Size: {{ draftResult?.assetSizeBytes }} bytes</p>
+        <p>Private asset stored: Yes</p>
+      </div>
+
+      <div v-else-if="draftUploadState === 'failure'" class="sign-result sign-result--fail">
+        <p>{{ draftUploadError }}</p>
+      </div>
+    </section>
+
     <EscrowTest />
     <TokenEscrowTest />
   </main>
@@ -422,5 +660,28 @@ h2 {
   font-size: 0.75rem;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.draft-form {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.draft-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.draft-form input[type='text'],
+.draft-form textarea {
+  width: 100%;
+  padding: 0.5rem;
+  font: inherit;
+}
+
+.draft-form input[type='file'] {
+  font: inherit;
 }
 </style>

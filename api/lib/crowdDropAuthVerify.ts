@@ -5,6 +5,7 @@
 import type { Hex } from 'viem'
 
 export const AUTH_TEST_ACTION = 'auth_test'
+export const SELLER_UPLOAD_ACTION = 'seller_upload'
 
 const POLYGON_CHAIN_ID = 137
 const POLYGON_CROWDDROP_ADDRESS = '0xCd9fAa04F12B3BcF926359057e1Ff445E7e75c12' as const

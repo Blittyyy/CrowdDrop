@@ -11,6 +11,8 @@ export type CrowdDropAuthAction = 'auth_test' | 'seller_upload' | 'product_downl
 
 export const AUTH_TEST_ACTION = 'auth_test' as const satisfies CrowdDropAuthAction
 
+export const SELLER_UPLOAD_ACTION = 'seller_upload' as const satisfies CrowdDropAuthAction
+
 export const AUTH_CHALLENGE_TTL_SECONDS = 5 * 60
 
 export const CROWDDROP_AUTH_DOMAIN = {

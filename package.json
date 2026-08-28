@@ -19,6 +19,7 @@
     "test:polling": "node --experimental-strip-types scripts/check-drop-detail-polling.ts && node --experimental-strip-types scripts/check-home-list-polling.ts",
     "test:signing": "node --experimental-strip-types scripts/check-signing.ts && node --experimental-strip-types scripts/check-api-signing.ts",
     "test:supabase": "node --experimental-strip-types scripts/check-supabase-foundation.ts",
+    "test:seller-draft": "node --experimental-strip-types scripts/check-seller-product-draft.ts",
     "compile": "hardhat compile",
     "test:escrow": "hardhat test",
     "deploy:sepolia": "hardhat run scripts/deploy.cjs --network sepolia",
@@ -38,6 +39,7 @@
   "dependencies": {
     "@nimiq/mini-app-sdk": "^0.1.0",
     "@supabase/supabase-js": "^2.112.4",
+    "busboy": "^1.6.0",
     "viem": "^2.31.7",
     "vue": "^3.5.13"
   },
