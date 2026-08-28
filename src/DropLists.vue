@@ -1,7 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import DropCard from './DropCard.vue'
 import { loadCommunityDrops, loadDropSummary, loadMyDrops, type DropSummary } from './dropCatalog'
+import {
+  ACTIVE_DROP_POLL_MS,
+  canStartPollTick,
+  shouldPausePolling,
+} from './dropDetailPolling'
+import {
+  mergePolledSummary,
+  patchSummaryList,
+  pollableSummaryIds,
+  shouldPollHomeLists,
+} from './homeListPolling'
 import { activeCrowdDropNetwork } from './escrowConfig'
 import { readRecentDropIds, removeRecentDropId } from './lastOpenedDrop'
 import {
@@ -17,9 +28,18 @@ const communityStatus = ref<string | null>(null)
 const communityFailed = ref(false)
 const recentStatus = ref<string | null>(null)
 const myStatus = ref<string | null>(null)
+const refreshing = ref(false)
+const refreshError = ref<string | null>(null)
 let communityGen = 0
 let recentGen = 0
 let myGen = 0
+let refreshGen = 0
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollInFlight = false
+
+function visibleSummaries(): DropSummary[] {
+  return [...community.value, ...recent.value, ...mine.value]
+}
 
 function statusRank(status: DropSummary['status']): number {
   if (status === 'Active')
@@ -51,12 +71,9 @@ const communitySorted = computed(() =>
   }),
 )
 
+/** Public on-chain list — independent of wallet connection / network. */
 async function loadCommunity() {
   const gen = ++communityGen
-  if (walletChecking.value) {
-    communityStatus.value = null
-    return
-  }
   communityFailed.value = false
   communityStatus.value = null
   try {
@@ -71,23 +88,15 @@ async function loadCommunity() {
       return
     community.value = []
     communityFailed.value = true
-    communityStatus.value = 'Could not load community Drops.'
+    communityStatus.value = 'Couldn’t load Community.'
   }
 }
 
+/** Recent IDs are local; drop payloads resolve via public RPC. */
 async function loadRecent() {
   const gen = ++recentGen
   const ids = readRecentDropIds()
   if (ids.length === 0) {
-    recent.value = []
-    recentStatus.value = 'No recently viewed Drops.'
-    return
-  }
-  if (walletChecking.value) {
-    recentStatus.value = null
-    return
-  }
-  if (!walletOnActiveNetwork.value) {
     recent.value = []
     recentStatus.value = 'No recently viewed Drops.'
     return
@@ -106,6 +115,7 @@ async function loadRecent() {
       loaded.push(summary)
     }
     catch {
+      // Skip one bad id; keep resolving the rest via public reads.
       if (gen !== recentGen)
         return
     }
@@ -149,25 +159,163 @@ async function loadMine() {
   }
 }
 
+function applySummaryUpdate(id: string, fresh: DropSummary) {
+  community.value = patchSummaryList(community.value, id, mergePolledSummary(
+    community.value.find(row => row.id === id) ?? fresh,
+    fresh,
+  ))
+  recent.value = patchSummaryList(recent.value, id, mergePolledSummary(
+    recent.value.find(row => row.id === id) ?? fresh,
+    fresh,
+  ))
+  mine.value = patchSummaryList(mine.value, id, mergePolledSummary(
+    mine.value.find(row => row.id === id) ?? fresh,
+    fresh,
+  ))
+}
+
+function stopHomePolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function startHomePolling() {
+  stopHomePolling()
+  if (shouldPausePolling(document.visibilityState))
+    return
+  if (!shouldPollHomeLists(visibleSummaries()))
+    return
+  pollTimer = setInterval(() => {
+    void pollHomeLists()
+  }, ACTIVE_DROP_POLL_MS)
+}
+
+function syncHomePolling() {
+  if (shouldPausePolling(document.visibilityState) || !shouldPollHomeLists(visibleSummaries())) {
+    stopHomePolling()
+    return
+  }
+  startHomePolling()
+}
+
+async function pollHomeLists() {
+  if (!shouldPollHomeLists(visibleSummaries()))
+    return
+  if (!canStartPollTick(pollInFlight, refreshing.value))
+    return
+
+  pollInFlight = true
+  try {
+    const ids = pollableSummaryIds(community.value, recent.value, mine.value)
+    for (const id of ids) {
+      const existing = community.value.find(row => row.id === id)
+        ?? recent.value.find(row => row.id === id)
+        ?? mine.value.find(row => row.id === id)
+      if (!existing)
+        continue
+      const fresh = await loadDropSummary(BigInt(id))
+      if (fresh === 'missing')
+        continue
+      applySummaryUpdate(id, fresh)
+    }
+    syncHomePolling()
+  }
+  catch {
+    // Quiet background poll — keep last known good rows.
+  }
+  finally {
+    pollInFlight = false
+  }
+}
+
+function resumeHomeFromBackground() {
+  if (shouldPausePolling(document.visibilityState))
+    return
+  if (shouldPollHomeLists(visibleSummaries())) {
+    void pollHomeLists().finally(() => syncHomePolling())
+  }
+}
+
+function onVisibilityChange() {
+  if (shouldPausePolling(document.visibilityState)) {
+    stopHomePolling()
+    return
+  }
+  resumeHomeFromBackground()
+}
+
 function reloadHomeLists() {
   void loadCommunity()
   void loadRecent()
   void loadMine()
 }
 
+/** Manual Home refresh — Community first, plus Your Drops / Recent. Keeps last good Community rows on failure. */
+async function refreshHome() {
+  if (refreshing.value)
+    return
+  const gen = ++refreshGen
+  refreshing.value = true
+  refreshError.value = null
+  const previousCommunity = [...community.value]
+
+  await Promise.all([loadCommunity(), loadRecent(), loadMine()])
+  if (gen !== refreshGen)
+    return
+
+  if (communityFailed.value) {
+    if (previousCommunity.length > 0) {
+      community.value = previousCommunity
+      communityFailed.value = false
+      communityStatus.value = null
+    }
+    refreshError.value = 'Couldn’t refresh. Try again.'
+  }
+
+  refreshing.value = false
+  syncHomePolling()
+}
+
 watch([walletAccount, walletOnActiveNetwork, walletChecking], () => {
-  reloadHomeLists()
+  // Community / Recent are public; still refresh Your Drops on wallet changes.
+  void loadMine()
 })
+
+watch([community, recent, mine], () => {
+  syncHomePolling()
+}, { deep: true })
 
 onMounted(() => {
   reloadHomeLists()
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('focus', resumeHomeFromBackground)
+})
+
+onUnmounted(() => {
+  stopHomePolling()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('focus', resumeHomeFromBackground)
 })
 </script>
 
 <template>
   <section class="lists">
     <div class="block">
-      <h2>Community</h2>
+      <div class="section-head">
+        <h2>Community</h2>
+        <button
+          type="button"
+          class="refresh-btn"
+          :disabled="refreshing"
+          :aria-busy="refreshing"
+          @click="refreshHome"
+        >
+          <span class="refresh-hit">{{ refreshing ? '↻ Refreshing…' : '↻ Refresh' }}</span>
+        </button>
+      </div>
+      <p v-if="refreshError" class="refresh-error">{{ refreshError }}</p>
       <p v-if="communityStatus" class="empty">{{ communityStatus }}</p>
       <button v-if="communityFailed" type="button" class="retry" @click="loadCommunity">Retry</button>
       <div v-if="communitySorted.length" class="rows">
@@ -198,13 +346,23 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  margin-top: 16px;
+  margin-top: 14px;
   font-family: Inter, system-ui, sans-serif;
 }
 .block {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}
+.section-head h2 {
+  margin: 0;
 }
 .rows {
   display: flex;
@@ -223,6 +381,45 @@ h2 {
   color: #6A6A6A;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  border: none;
+  background: transparent;
+  color: #8A8A8A;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0;
+  min-height: 44px;
+  min-width: 44px;
+  cursor: pointer;
+  text-align: right;
+  flex: 0 0 auto;
+}
+.refresh-hit {
+  display: inline-block;
+  padding: 2px 0;
+  line-height: 1.3;
+}
+.refresh-btn:hover:not(:disabled) {
+  color: #6A6A6A;
+}
+.refresh-btn:active:not(:disabled) {
+  color: #141414;
+  opacity: 0.85;
+}
+.refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.refresh-error {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: #B9430E;
+  line-height: 1.35;
 }
 .empty {
   margin: 6px 0 0;

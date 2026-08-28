@@ -48,3 +48,8 @@ export function parseTokenAmount(input: string, decimals: number): bigint {
 export function formatTokenAmount(value: bigint, decimals: number): string {
   return formatUnits(value, decimals)
 }
+
+/** Total paid on claim: contribution × goal (exact base units). */
+export function dropClaimedTotalUnits(contribution: bigint, goal: bigint): bigint {
+  return contribution * goal
+}

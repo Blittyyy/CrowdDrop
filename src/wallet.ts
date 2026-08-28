@@ -1,4 +1,5 @@
 import { POLYGON_CHAIN_ID, SEPOLIA_CHAIN_ID, activeCrowdDropNetwork } from './escrowConfig'
+import { isUserRejection as isTxUserRejection } from './txRequest'
 
 export const KNOWN_CHAINS: Record<string, string> = {
   '0x1': 'Ethereum',
@@ -53,16 +54,12 @@ export function shortenAddress(address: string): string {
 }
 
 export function formatWalletError(error: unknown): string {
+  if (isTxUserRejection(error))
+    return 'Transaction cancelled.'
+
   if (typeof error === 'object' && error !== null) {
-    const code = 'code' in error ? (error as { code?: unknown }).code : undefined
     const message = 'message' in error ? (error as { message?: unknown }).message : undefined
     const data = 'data' in error ? (error as { data?: unknown }).data : undefined
-
-    if (code === 4001 || code === '4001')
-      return 'Request rejected in Nimiq Pay.'
-
-    if (typeof message === 'string' && /reject|denied|cancel/i.test(message))
-      return 'Request rejected in Nimiq Pay.'
 
     if (typeof message === 'string' && message.trim())
       return typeof data === 'string' && data.trim() ? `${message} (${data})` : message
@@ -88,17 +85,7 @@ export function isUnrecognizedChainError(error: unknown): boolean {
   return code === 4902 || code === '4902'
 }
 
+/** Re-export for existing callers. */
 export function isUserRejection(error: unknown): boolean {
-  if (typeof error === 'object' && error !== null) {
-    const code = 'code' in error ? (error as { code?: unknown }).code : undefined
-    if (code === 4001 || code === '4001')
-      return true
-    const message = 'message' in error ? (error as { message?: unknown }).message : undefined
-    if (typeof message === 'string' && /reject|denied|cancel/i.test(message))
-      return true
-  }
-  if (typeof error === 'string' && /reject|denied|cancel/i.test(error))
-    return true
-  return error instanceof Error && /reject|denied|cancel/i.test(error.message)
+  return isTxUserRejection(error)
 }
-

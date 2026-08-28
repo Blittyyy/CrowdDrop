@@ -1,0 +1,439 @@
+/* Shared participant-dot motion — showcase /showcase only */
+
+.motion-dots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  color: #C94E12;
+}
+
+.motion-dots.is-success-tone {
+  color: #1F7A45;
+}
+
+.motion-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  background: transparent;
+  flex: 0 0 auto;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  will-change: transform, opacity;
+}
+
+.motion-dot.filled {
+  background: currentColor;
+}
+
+.motion-dot-count {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #6A6A6A;
+}
+
+@keyframes cd-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Drop Created --- */
+@keyframes cd-created-assemble {
+  0% {
+    opacity: 0.45;
+    transform: translateY(-8px) scale(0.96);
+    border-color: #E2E2DE;
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(0) scale(1.05);
+    border-color: #C94E12;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    border-color: #C94E12;
+  }
+}
+
+.motion-created.is-idle .motion-dot {
+  opacity: 0.5;
+  transform: translateY(-7px) scale(0.98);
+  border-color: #E2E2DE;
+}
+
+.motion-created.is-idle .motion-title,
+.motion-created.is-idle .motion-rest {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+
+.motion-created.is-playing .motion-dot {
+  animation: cd-created-assemble var(--created-dot-ms, 200ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * var(--created-stagger-ms, 38ms));
+}
+
+.motion-created.is-playing .motion-title {
+  opacity: 0;
+  animation: cd-fade-up var(--created-fade-ms, 180ms) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--created-title-delay-ms, 580ms) forwards;
+}
+
+.motion-created.is-playing .motion-rest {
+  opacity: 0;
+  animation: cd-fade-up var(--created-fade-ms, 180ms) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--created-rest-delay-ms, 660ms) forwards;
+}
+
+.motion-created.is-complete .motion-dot {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  border-color: #C94E12;
+}
+
+.motion-created.is-complete .motion-title,
+.motion-created.is-complete .motion-rest {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* --- Drop Success --- */
+@keyframes cd-final-pop {
+  0% {
+    transform: scale(0.85);
+    background: transparent;
+  }
+  55% {
+    transform: scale(1.08);
+    background: currentColor;
+  }
+  100% {
+    transform: scale(1);
+    background: currentColor;
+  }
+}
+
+@keyframes cd-dot-confirm {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes cd-success-green {
+  from {
+    color: #C94E12;
+  }
+  to {
+    color: #1F7A45;
+  }
+}
+
+@keyframes cd-row-success-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.motion-success.is-idle .motion-dot.filled {
+  background: currentColor;
+}
+
+.motion-success.is-idle .motion-dot.final-slot {
+  background: transparent;
+}
+
+.motion-success.is-idle .motion-title,
+.motion-success.is-idle .motion-rest {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+
+.motion-success.is-playing .motion-dot.final-slot {
+  animation:
+    cd-final-pop var(--success-fill-ms, 180ms) cubic-bezier(0.16, 1, 0.3, 1) 0ms forwards,
+    cd-dot-confirm var(--success-confirm-ms, 120ms) cubic-bezier(0.45, 0, 0.55, 1)
+      calc(var(--success-sweep-start-ms, 260ms) + var(--i, 0) * var(--success-stagger-ms, 42ms)) both;
+}
+
+.motion-success.is-playing .motion-dot.filled:not(.final-slot) {
+  animation: cd-dot-confirm var(--success-confirm-ms, 120ms) cubic-bezier(0.45, 0, 0.55, 1)
+    calc(var(--success-sweep-start-ms, 260ms) + var(--i, 0) * var(--success-stagger-ms, 42ms)) both;
+}
+
+.motion-success.is-playing .motion-dots {
+  animation: cd-success-green var(--success-green-ms, 200ms) cubic-bezier(0.45, 0, 0.55, 1)
+    var(--success-green-start-ms, 638ms) forwards;
+}
+
+.motion-success.is-playing .motion-dots-wrap {
+  animation: cd-row-success-pulse var(--success-pulse-ms, 160ms) cubic-bezier(0.45, 0, 0.55, 1)
+    var(--success-pulse-start-ms, 838ms) both;
+  transform-origin: left center;
+}
+
+.motion-success.is-playing .motion-title {
+  opacity: 0;
+  animation: cd-fade-up var(--success-fade-ms, 180ms) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--success-title-start-ms, 1018ms) forwards;
+}
+
+.motion-success.is-playing .motion-rest {
+  opacity: 0;
+  animation: cd-fade-up var(--success-fade-ms, 180ms) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--success-rest-start-ms, 1078ms) forwards;
+}
+
+.motion-success.is-complete .motion-dots,
+.motion-success.is-complete .motion-dots.is-success-tone {
+  color: #1F7A45;
+}
+
+.motion-success.is-complete .motion-dot.final-slot {
+  background: currentColor;
+}
+
+.motion-success.is-complete .motion-title,
+.motion-success.is-complete .motion-rest {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* --- Claim Complete --- */
+/* Always green — Claim plays after Successful; never inherit active orange. */
+.motion-claim .motion-dots {
+  color: #1F7A45;
+}
+
+@keyframes cd-claim-compress {
+  0% {
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    transform: translateX(calc(var(--toward-center, 0) * 1px)) scale(0.85);
+  }
+}
+
+@keyframes cd-claim-hold {
+  0%,
+  100% {
+    transform: translateX(calc(var(--toward-center, 0) * 1px)) scale(0.85);
+  }
+}
+
+@keyframes cd-claim-expand {
+  0% {
+    transform: translateX(calc(var(--toward-center, 0) * 1px)) scale(0.85);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes cd-claim-row-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.motion-claim.is-idle .motion-title,
+.motion-claim.is-idle .motion-subtitle,
+.motion-claim.is-idle .motion-rest {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+
+.motion-claim.is-playing:not(.is-small-goal) .motion-dot {
+  animation:
+    cd-claim-compress var(--claim-compress-ms, 250ms) cubic-bezier(0.45, 0, 0.55, 1) 0ms forwards,
+    cd-claim-hold var(--claim-hold-ms, 100ms) cubic-bezier(0.45, 0, 0.55, 1)
+      var(--claim-compress-ms, 250ms) forwards,
+    cd-claim-expand var(--claim-expand-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1)
+      calc(var(--claim-compress-ms, 250ms) + var(--claim-hold-ms, 100ms)) forwards;
+}
+
+@keyframes cd-claim-small-compress {
+  0% {
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    transform: translateX(calc(var(--toward-center, 0) * 1px)) scale(1.2);
+  }
+}
+
+@keyframes cd-claim-small-hold {
+  0%,
+  100% {
+    transform: translateX(calc(var(--toward-center, 0) * 1px)) scale(1.2);
+  }
+}
+
+@keyframes cd-claim-small-expand {
+  0% {
+    transform: translateX(calc(var(--toward-center, 0) * 1px)) scale(1.2);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes cd-claim-dot-pulse {
+  0%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+  50% {
+    transform: translateX(0) scale(1.05);
+  }
+}
+
+.motion-claim.is-small-goal.is-playing .motion-dot {
+  animation:
+    cd-claim-small-compress var(--claim-compress-ms, 250ms) cubic-bezier(0.45, 0, 0.55, 1) 0ms forwards,
+    cd-claim-small-hold var(--claim-hold-ms, 100ms) cubic-bezier(0.45, 0, 0.55, 1)
+      var(--claim-compress-ms, 250ms) forwards,
+    cd-claim-small-expand var(--claim-expand-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1)
+      calc(var(--claim-compress-ms, 250ms) + var(--claim-hold-ms, 100ms)) forwards,
+    cd-claim-dot-pulse var(--claim-pulse-ms, 120ms) cubic-bezier(0.45, 0, 0.55, 1)
+      calc(var(--claim-compress-ms, 250ms) + var(--claim-hold-ms, 100ms) + var(--claim-expand-ms, 250ms)) both;
+}
+
+.motion-claim.is-playing:not(.is-small-goal) .motion-dots-wrap {
+  animation: cd-claim-row-pulse var(--claim-pulse-ms, 120ms) cubic-bezier(0.45, 0, 0.55, 1)
+    calc(var(--claim-compress-ms, 250ms) + var(--claim-hold-ms, 100ms) + var(--claim-expand-ms, 250ms)) both;
+  transform-origin: left center;
+}
+
+.motion-claim.is-playing .motion-title {
+  opacity: 0;
+  animation: cd-fade-up var(--claim-fade-ms, 160ms) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--claim-title-delay-ms, 450ms) forwards;
+}
+
+.motion-claim.is-playing .motion-subtitle {
+  opacity: 0;
+  animation: cd-fade-up var(--claim-fade-ms, 160ms) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--claim-rest-delay-ms, 550ms) forwards;
+}
+
+.motion-claim.is-playing .motion-rest {
+  opacity: 0;
+  animation: cd-fade-up var(--claim-fade-ms, 160ms) cubic-bezier(0.16, 1, 0.3, 1)
+    calc(var(--claim-rest-delay-ms, 550ms) + 80ms) forwards;
+}
+
+.motion-claim.is-complete .motion-title,
+.motion-claim.is-complete .motion-subtitle,
+.motion-claim.is-complete .motion-rest {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* --- Reduced motion --- */
+.demo-stage.reduce-motion .motion-created.is-playing .motion-dot,
+.demo-stage.reduce-motion .motion-success.is-playing .motion-dot,
+.demo-stage.reduce-motion .motion-success.is-playing .motion-dots,
+.demo-stage.reduce-motion .motion-success.is-playing .motion-dots-wrap,
+.demo-stage.reduce-motion .motion-claim.is-playing .motion-dot {
+  animation: none !important;
+}
+
+.demo-stage.reduce-motion .motion-claim.is-playing .motion-dots {
+  color: #1F7A45;
+}
+
+.demo-stage.reduce-motion .motion-created.is-playing .motion-title,
+.demo-stage.reduce-motion .motion-created.is-playing .motion-rest,
+.demo-stage.reduce-motion .motion-success.is-playing .motion-title,
+.demo-stage.reduce-motion .motion-success.is-playing .motion-rest,
+.demo-stage.reduce-motion .motion-claim.is-playing .motion-title,
+.demo-stage.reduce-motion .motion-claim.is-playing .motion-subtitle,
+.demo-stage.reduce-motion .motion-claim.is-playing .motion-rest {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.demo-stage.reduce-motion .motion-created.is-playing .motion-dot,
+.demo-stage.reduce-motion .motion-created.is-complete .motion-dot {
+  opacity: 1;
+  transform: none;
+  border-color: #C94E12;
+}
+
+.demo-stage.reduce-motion .motion-success.is-playing .motion-dot.final-slot,
+.demo-stage.reduce-motion .motion-success.is-complete .motion-dot.final-slot {
+  background: currentColor;
+}
+
+.demo-stage.reduce-motion .motion-success.is-playing .motion-dots,
+.demo-stage.reduce-motion .motion-success.is-complete .motion-dots {
+  color: #1F7A45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-created.is-playing .motion-dot,
+  .motion-success.is-playing .motion-dot,
+  .motion-success.is-playing .motion-dots,
+  .motion-success.is-playing .motion-dots-wrap,
+  .motion-claim.is-playing .motion-dot {
+    animation: none !important;
+  }
+
+  .motion-claim .motion-dots {
+    color: #1F7A45;
+  }
+
+  .motion-created.is-playing .motion-title,
+  .motion-created.is-playing .motion-rest,
+  .motion-success.is-playing .motion-title,
+  .motion-success.is-playing .motion-rest,
+  .motion-claim.is-playing .motion-title,
+  .motion-claim.is-playing .motion-subtitle,
+  .motion-claim.is-playing .motion-rest {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .motion-created.is-playing .motion-dot,
+  .motion-created.is-complete .motion-dot {
+    opacity: 1;
+    transform: none;
+    border-color: #C94E12;
+  }
+
+  .motion-success.is-playing .motion-dot.final-slot,
+  .motion-success.is-complete .motion-dot.final-slot {
+    background: currentColor;
+  }
+
+  .motion-success.is-playing .motion-dots,
+  .motion-success.is-complete .motion-dots {
+    color: #1F7A45;
+  }
+}

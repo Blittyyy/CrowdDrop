@@ -58,3 +58,19 @@ body.cd-home {
   color: #141414;
   font-family: Inter, system-ui, sans-serif;
 }
+
+body.cd-drop {
+  background: #F6F6F4;
+  color: #141414;
+  font-family: Inter, system-ui, sans-serif;
+}
+
+body.cd-home button:focus-visible,
+body.cd-drop button:focus-visible,
+body.cd-home a:focus-visible,
+body.cd-drop a:focus-visible,
+body.cd-home input:focus-visible,
+body.cd-drop input:focus-visible {
+  outline: 2px solid #C94E12;
+  outline-offset: 2px;
+}

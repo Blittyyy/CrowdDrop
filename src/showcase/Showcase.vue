@@ -10,6 +10,7 @@ import CreateScreens from './screens/CreateScreens.vue'
 import DropDetailScreen from './screens/DropDetailScreen.vue'
 import HomeScreen from './screens/HomeScreen.vue'
 import SystemScreens from './screens/SystemScreens.vue'
+import MotionSection from './motion/MotionSection.vue'
 
 const activeSellerDrop = { ...DROP_ACTIVE, sellerShort: SELLER_SHORT }
 const successSellerDrop = { ...DROP_SUCCESS, sellerShort: SELLER_SHORT }
@@ -104,6 +105,8 @@ const expiredSellerDrop = { ...DROP_EXPIRED, sellerShort: SELLER_SHORT }
       <h2 class="label">Wrong Network</h2>
       <SystemScreens mode="wrong-network" />
     </section>
+
+    <MotionSection />
   </div>
 </template>
 

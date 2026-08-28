@@ -27,6 +27,9 @@ export function friendlyUserError(error: unknown): string {
   const raw = formatWalletError(error)
   const lower = raw.toLowerCase()
 
+  if (/transaction cancelled|request rejected|user rejected|user denied|action_rejected|dismiss/i.test(lower))
+    return 'Transaction cancelled.'
+
   if (/insufficient funds|insufficient balance|not enough.*gas/i.test(raw))
     return `Not enough ${gas()} for gas.`
 

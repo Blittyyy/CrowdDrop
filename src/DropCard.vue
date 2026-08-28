@@ -90,10 +90,10 @@ onUnmounted(() => {
 .drop-row {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
   margin: 0;
-  padding: 12px 0;
+  padding: 11px 0;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -114,21 +114,28 @@ onUnmounted(() => {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
+  width: 100%;
 }
 .lead {
   margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #141414;
+  font-variant-numeric: tabular-nums;
 }
 .status {
-  margin: 0;
+  margin: 0 0 0 auto;
+  flex: 0 0 auto;
+  min-width: 4.5rem;
   font-size: 12px;
   font-weight: 500;
   color: #B9430E;
   white-space: nowrap;
+  text-align: right;
 }
 .status.success {
   color: #1F7A45;
@@ -138,9 +145,16 @@ onUnmounted(() => {
 }
 .row-meta {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   font-size: 12px;
   color: #6A6A6A;
+  font-variant-numeric: tabular-nums;
+}
+.row-meta > span:last-child {
+  flex: 0 0 auto;
+  text-align: right;
+  white-space: nowrap;
 }
 </style>

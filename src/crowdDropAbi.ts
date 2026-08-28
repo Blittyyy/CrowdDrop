@@ -97,6 +97,24 @@ export const crowdDropAbi = [
     ],
   },
   {
+    type: 'event',
+    name: 'Withdrawn',
+    inputs: [
+      { name: 'dropId', type: 'uint256', indexed: true },
+      { name: 'buyer', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'Claimed',
+    inputs: [
+      { name: 'dropId', type: 'uint256', indexed: true },
+      { name: 'seller', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
     type: 'function',
     name: 'nextDropId',
     inputs: [],

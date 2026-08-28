@@ -3,7 +3,13 @@ import { init } from '@nimiq/mini-app-sdk'
 import { onMounted, ref } from 'vue'
 import EscrowTest from './EscrowTest.vue'
 import TokenEscrowTest from './TokenEscrowTest.vue'
-import { formatChainId, formatWalletError, getProviderErrorMessage } from './wallet'
+import {
+  AUTH_TEST_ACTION,
+  buildCrowdDropAuthTypedData,
+  toProviderTypedDataPayload,
+} from './signing/crowdDropAuthTypedData'
+import { SignCancelledError, requestSignTypedDataV4 } from './signing/requestTypedDataSignature'
+import { formatChainId, formatWalletError, getProviderErrorMessage, sameAddress, shortenAddress } from './wallet'
 
 let nimiqPromise: ReturnType<typeof init> | null = null
 
@@ -20,6 +26,14 @@ const evmChainId = ref<string | null>(null)
 const evmChainName = ref<string | null>(null)
 const evmRequestError = ref<string | null>(null)
 const evmRequesting = ref(false)
+
+type SigningUiState = 'idle' | 'running' | 'success' | 'failure' | 'cancelled'
+
+const signingState = ref<SigningUiState>('idle')
+const signingError = ref<string | null>(null)
+const signingRecovered = ref<string | null>(null)
+const signingWalletMatch = ref<boolean | null>(null)
+const signingDevDetails = ref<string | null>(null)
 
 onMounted(async () => {
   ethereumAvailable.value = Boolean(window.ethereum)
@@ -103,6 +117,91 @@ async function connectEvmWallet() {
     evmRequesting.value = false
   }
 }
+
+function resetSigningResult() {
+  signingState.value = 'idle'
+  signingError.value = null
+  signingRecovered.value = null
+  signingWalletMatch.value = null
+  signingDevDetails.value = null
+}
+
+async function testEip712Signing() {
+  resetSigningResult()
+  signingState.value = 'running'
+
+  const provider = window.ethereum
+  if (!provider) {
+    signingState.value = 'failure'
+    signingError.value = 'Ethereum provider unavailable.'
+    return
+  }
+
+  if (!evmAddress.value) {
+    signingState.value = 'failure'
+    signingError.value = 'Connect an EVM wallet first.'
+    return
+  }
+
+  const wallet = evmAddress.value
+
+  try {
+    const challengeResponse = await fetch('/api/dev/signing-challenge')
+    if (!challengeResponse.ok)
+      throw new Error('Could not fetch signing challenge.')
+
+    const challenge = await challengeResponse.json() as { nonce?: string, expiresAt?: number }
+    if (!challenge.nonce || typeof challenge.expiresAt !== 'number')
+      throw new Error('Challenge response was invalid.')
+
+    const typedData = buildCrowdDropAuthTypedData({
+      action: AUTH_TEST_ACTION,
+      wallet,
+      nonce: challenge.nonce,
+      expiresAt: challenge.expiresAt,
+    })
+
+    const signature = await requestSignTypedDataV4(provider, wallet, typedData)
+    const providerPayload = toProviderTypedDataPayload(typedData)
+
+    const verifyResponse = await fetch('/api/dev/verify-signature', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        typedData: providerPayload,
+        signature,
+      }),
+    })
+
+    const verifyPayload = await verifyResponse.json() as {
+      ok?: boolean
+      reason?: string
+      recovered?: string
+      walletMatch?: boolean
+    }
+
+    if (!verifyResponse.ok || !verifyPayload.ok) {
+      signingState.value = 'failure'
+      signingError.value = verifyPayload.reason ?? 'Server verification failed.'
+      signingDevDetails.value = JSON.stringify({ typedData: providerPayload, signature }, null, 2)
+      return
+    }
+
+    signingState.value = 'success'
+    signingRecovered.value = verifyPayload.recovered ?? null
+    signingWalletMatch.value = sameAddress(verifyPayload.recovered, wallet)
+    signingDevDetails.value = JSON.stringify({ typedData: providerPayload, signature }, null, 2)
+  }
+  catch (error) {
+    if (error instanceof SignCancelledError) {
+      signingState.value = 'cancelled'
+      signingError.value = 'Signature cancelled.'
+      return
+    }
+    signingState.value = 'failure'
+    signingError.value = formatWalletError(error)
+  }
+}
 </script>
 
 <template>
@@ -143,6 +242,40 @@ async function connectEvmWallet() {
       </button>
     </section>
 
+    <section>
+      <h2>EIP-712 signing smoke test</h2>
+      <p>Development only. Proves Nimiq Pay can sign structured auth data and recover the connected wallet server-side.</p>
+      <p>Wallet: {{ evmAddress ? shortenAddress(evmAddress) : 'not connected' }}</p>
+
+      <button
+        type="button"
+        :disabled="signingState === 'running' || !ethereumAvailable || !evmAddress"
+        @click="testEip712Signing"
+      >
+        {{ signingState === 'running' ? 'Waiting for signature…' : 'Test EIP-712 Signing' }}
+      </button>
+
+      <div v-if="signingState === 'success'" class="sign-result sign-result--ok">
+        <p><strong>EIP-712 signing works</strong></p>
+        <p>Recovered: {{ signingRecovered }}</p>
+        <p>Wallet match: {{ signingWalletMatch ? 'Yes' : 'No' }}</p>
+      </div>
+
+      <div v-else-if="signingState === 'failure'" class="sign-result sign-result--fail">
+        <p><strong>EIP-712 signing failed</strong></p>
+        <p>{{ signingError }}</p>
+      </div>
+
+      <div v-else-if="signingState === 'cancelled'" class="sign-result sign-result--cancel">
+        <p>{{ signingError }}</p>
+      </div>
+
+      <details v-if="signingDevDetails" class="dev-details">
+        <summary>Dev details</summary>
+        <pre>{{ signingDevDetails }}</pre>
+      </details>
+    </section>
+
     <EscrowTest />
     <TokenEscrowTest />
   </main>
@@ -167,5 +300,37 @@ p,
 h1,
 h2 {
   overflow-wrap: anywhere;
+}
+
+.sign-result {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+}
+
+.sign-result--ok {
+  background: #eef8ef;
+  border-color: #b8ddb9;
+}
+
+.sign-result--fail {
+  background: #fef2f2;
+  border-color: #f0c4c4;
+}
+
+.sign-result--cancel {
+  background: #f8f8f8;
+}
+
+.dev-details {
+  margin-top: 0.75rem;
+}
+
+.dev-details pre {
+  max-height: 14rem;
+  overflow: auto;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

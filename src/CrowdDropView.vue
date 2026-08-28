@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { crowdDropAbi, DROP_STATUS_LABELS } from './crowdDropAbi'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { crowdDropAbi, DROP_STATUS_LABELS, type DropStatusLabel } from './crowdDropAbi'
 import { erc20Abi } from './erc20Abi'
-import { activeCrowdDropNetwork } from './escrowConfig'
+import { activeCrowdDropNetwork, REUSABLE_ALLOWANCE_TOKENS } from './escrowConfig'
 import {
   decodeCall,
   ethCall,
   sendTx,
   waitForReceipt,
 } from './evm'
-import { formatTokenAmount } from './tokenMath'
+import { formatTokenAmount, dropClaimedTotalUnits } from './tokenMath'
 import { planTokenApproval, reusableApprovalAmount } from './tokenAllowance'
 import {
   developerErrorDetail,
@@ -17,19 +17,48 @@ import {
   isTransientReadError,
   isUnknownDropError,
 } from './userErrors'
-import { isUserRejection, sameAddress, shortenAddress } from './wallet'
-import { goToHome, saveLastOpenedDrop } from './lastOpenedDrop'
+import { sameAddress, shortenAddress } from './wallet'
+import { goBackOrHome, saveLastOpenedDrop } from './lastOpenedDrop'
 import {
-  approvalCapLabel,
-  formatMoneyLabel,
+  formatHomeAmount,
   formatRemainingShort,
-  objectiveStatusLabel,
-  progressRatio,
   spotsLeft,
 } from './uiFormat'
+import ParticipantDots from './ParticipantDots.vue'
+import DropParticipants from './DropParticipants.vue'
+import ClaimCompleteMotionContent from './motion/ClaimCompleteMotionContent.vue'
+import DropSuccessMotionContent from './motion/DropSuccessMotionContent.vue'
+import {
+  createLocalMotionSeenStorage,
+  hasSeenClaimMotion,
+  hasSeenSuccessMotion,
+  markClaimMotionSeen,
+  markSuccessMotionSeen,
+  type MotionSeenScope,
+} from './motion/motionSeenStorage'
+import { shouldAnimateClaim, shouldAnimateSuccess } from './motion/motionTriggers'
+import {
+  MOTION_MOUNT_TICKS,
+  motionPlaySideEffects,
+  nextMotionPlayAttempt,
+  shouldSkipMotionEvaluation,
+} from './motion/motionPlayback'
+import {
+  shouldShowStaticClaimedUi,
+  visibleStatusLabel as resolveVisibleStatus,
+} from './motion/claimTransition'
+import {
+  ACTIVE_DROP_POLL_MS,
+  canStartPollTick,
+  participantsNeedReload,
+  shouldPausePolling,
+  shouldPollDrop,
+  snapshotFromDrop,
+} from './dropDetailPolling'
+import { dropShareUrl, shareDropLink } from './shareDrop'
+import { isUserRejection } from './txRequest'
 import WalletBar from './WalletBar.vue'
 import {
-  confirmActiveChain,
   walletAccount,
   walletBusy,
   walletChecking,
@@ -58,17 +87,40 @@ const waitingLabel = ref<string | null>(null)
 const errorMessage = ref<string | null>(null)
 const errorDetail = ref<string | null>(null)
 const loadError = ref<string | null>(null)
+const refreshError = ref<string | null>(null)
+const refreshing = ref(false)
+const participantReloadToken = ref(0)
 const drop = ref<DropData | null>(null)
-const statusLabel = ref<string | null>(null)
+const statusLabel = ref<DropStatusLabel | 'Unknown' | null>(null)
 const deposit = ref<bigint>(0n)
 const tokenBalance = ref<bigint>(0n)
 const allowance = ref<bigint>(0n)
 const lastTxHash = ref<string | null>(null)
 const nowSec = ref(Math.floor(Date.now() / 1000))
 const dropStatus = ref<string | null>(null)
-let timer: ReturnType<typeof setInterval> | null = null
+const personalReady = ref(false)
+const successMotionActive = ref(false)
+const successUiReady = ref(true)
+const claimMotionActive = ref(false)
+const claimUiReady = ref(true)
+const claimReceiptConfirmed = ref(false)
+const claimTransitionActive = ref(false)
+const claimTransitionAmount = ref('')
+const claimingInFlight = ref(false)
+const pendingClaimedDrop = ref<DropData | null>(null)
+const pendingClaimedStatus = ref<DropStatusLabel | 'Unknown' | null>(null)
+const successMotionRef = ref<InstanceType<typeof DropSuccessMotionContent> | null>(null)
+const claimMotionRef = ref<InstanceType<typeof ClaimCompleteMotionContent> | null>(null)
+const motionSeen = createLocalMotionSeenStorage()
+/** True while waiting for Nimiq Pay to return a tx hash (swipe-dismiss recoverable). */
+const awaitingWalletConfirm = ref(false)
+let clockTimer: ReturnType<typeof setInterval> | null = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let pollInFlight = false
 let loadGeneration = 0
-let chainSettleRetries = 0
+let actionAbort: AbortController | null = null
+let claimPlayToken = 0
+let successPlayToken = 0
 
 const dropId = computed(() => {
   if (!/^\d+$/.test(props.dropParam.trim()))
@@ -115,7 +167,13 @@ const canWithdraw = computed(() => {
     return false
   return statusLabel.value === 'Active' || statusLabel.value === 'Expired'
 })
-const canClaim = computed(() => isSeller.value && statusLabel.value === 'Successful')
+const canClaim = computed(() =>
+  isSeller.value
+  && statusLabel.value === 'Successful'
+  && !claimTransitionActive.value
+  && !claimingInFlight.value
+  && !claimMotionActive.value,
+)
 const tokenLabel = computed(() => network.tokenSymbol)
 const insufficientBalance = computed(() => {
   if (!drop.value)
@@ -135,37 +193,137 @@ const requiredAction = computed(() => {
 const remaining = computed(() => {
   if (!drop.value || statusLabel.value !== 'Active')
     return null
-  const short = formatRemainingShort(drop.value.deadline, nowSec.value)
-  return short ? `${short} left` : null
+  return formatRemainingShort(drop.value.deadline, nowSec.value)
 })
 
-const contributionMoney = computed(() =>
-  drop.value ? formatMoneyLabel(drop.value.contribution, network.tokenDecimals) : '',
+const contributionHome = computed(() =>
+  drop.value ? formatHomeAmount(drop.value.contribution, network.tokenDecimals) : '',
 )
-const escrowedMoney = computed(() =>
-  drop.value ? formatMoneyLabel(drop.value.escrowed, network.tokenDecimals) : '',
+const contributionPlain = computed(() =>
+  drop.value ? formatTokenAmount(drop.value.contribution, network.tokenDecimals) : '',
 )
-const depositMoney = computed(() => formatMoneyLabel(deposit.value, network.tokenDecimals))
-const progress = computed(() =>
-  drop.value ? progressRatio(drop.value.buyerCount, drop.value.goal) : 0,
+const escrowedPlain = computed(() =>
+  drop.value ? formatTokenAmount(drop.value.escrowed, network.tokenDecimals) : '',
 )
+const claimedPlain = computed(() =>
+  drop.value
+    ? formatTokenAmount(dropClaimedTotalUnits(drop.value.contribution, drop.value.goal), network.tokenDecimals)
+    : '',
+)
+const showClaimedFundsLine = computed(() =>
+  statusLabel.value === 'Claimed' || visibleStatusLabel.value === 'Claimed',
+)
+const fundsLine = computed(() =>
+  showClaimedFundsLine.value
+    ? `${claimedPlain.value} ${tokenLabel.value} claimed`
+    : `${escrowedPlain.value} ${tokenLabel.value} pooled`,
+)
+const depositPlain = computed(() => formatTokenAmount(deposit.value, network.tokenDecimals))
 const spots = computed(() =>
   drop.value ? spotsLeft(drop.value.buyerCount, drop.value.goal) : 0,
 )
-const badge = computed(() => {
-  if (!drop.value || !statusLabel.value)
-    return 'UNKNOWN'
-  return objectiveStatusLabel(statusLabel.value as 'Active' | 'Successful' | 'Expired' | 'Claimed' | 'Unknown', drop.value)
-})
-const progressMeta = computed(() => {
+const progressLine = computed(() => {
   if (!drop.value)
     return ''
-  const joined = `${drop.value.buyerCount.toString()} of ${drop.value.goal.toString()} joined`
-  if (statusLabel.value === 'Active')
-    return `${joined} · ${spots.value} spot${spots.value === 1 ? '' : 's'} left${remaining.value ? ` · ${remaining.value}` : ''}`
-  return joined
+  const base = `${drop.value.buyerCount.toString()} / ${drop.value.goal.toString()} joined`
+  if (visibleStatusLabel.value === 'Active')
+    return `${base} · ${spots.value} spot${spots.value === 1 ? '' : 's'} left`
+  return base
 })
+const dotsTone = computed(() => {
+  const status = visibleStatusLabel.value
+  if (status === 'Successful' || status === 'Claimed')
+    return 'success' as const
+  if (status === 'Expired')
+    return 'expired' as const
+  return 'orange' as const
+})
+
+const visibleStatusLabel = computed(() =>
+  resolveVisibleStatus(statusLabel.value, claimTransitionActive.value),
+)
+
+const showStaticClaimedUi = computed(() =>
+  shouldShowStaticClaimedUi(statusLabel.value, claimTransitionActive.value, claimUiReady.value),
+)
+const waitingBuyersLine = computed(() => {
+  const n = spots.value
+  if (n <= 0)
+    return 'Goal reached.'
+  return `Waiting for ${n} more buyer${n === 1 ? '' : 's'}.`
+})
+
+/** Active Drop, non-seller — shared utility Drop Detail chrome (prospective or joined). */
+const isActiveBuyerDetail = computed(() =>
+  Boolean(drop.value)
+  && statusLabel.value === 'Active'
+  && !isSeller.value,
+)
+
+const isActiveSellerDetail = computed(() =>
+  Boolean(drop.value)
+  && statusLabel.value === 'Active'
+  && isSeller.value,
+)
+
+/** Confirmed deposit > 0 on Active Drop — Joined Buyer personal state. */
+const isJoinedBuyerSurface = computed(() =>
+  isActiveBuyerDetail.value
+  && personalReady.value
+  && hasDeposit.value,
+)
+
+/** Active Drop, buyer role, not yet joined — Enable / Join surface. */
+const isActiveBuyerSurface = computed(() =>
+  isActiveBuyerDetail.value
+  && !hasDeposit.value,
+)
+
+const buyerEligibilityPending = computed(() =>
+  isActiveBuyerDetail.value
+  && Boolean(walletAccount.value)
+  && (walletChecking.value || !personalReady.value),
+)
+
+const showEnableCrowdDrop = computed(() =>
+  isActiveBuyerSurface.value
+  && personalReady.value
+  && !walletChecking.value
+  && Boolean(walletAccount.value)
+  && walletOnActiveNetwork.value
+  && canApprove.value,
+)
+
+const showJoinCrowdDrop = computed(() =>
+  isActiveBuyerSurface.value
+  && personalReady.value
+  && !walletChecking.value
+  && Boolean(walletAccount.value)
+  && walletOnActiveNetwork.value
+  && canJoin.value,
+)
+
+const showJoinedWithdraw = computed(() =>
+  isJoinedBuyerSurface.value
+  && canWithdraw.value
+  && Boolean(walletAccount.value)
+  && walletOnActiveNetwork.value
+  && !walletChecking.value,
+)
+
+const showExpiredWithdraw = computed(() =>
+  statusLabel.value === 'Expired'
+  && hasDeposit.value
+  && !isSeller.value
+  && personalReady.value
+  && Boolean(walletAccount.value)
+  && walletOnActiveNetwork.value
+  && !walletChecking.value
+  && canWithdraw.value,
+)
+
 const sellerCopied = ref(false)
+const shareFeedback = ref<string | null>(null)
 
 async function copySeller() {
   if (!drop.value)
@@ -182,9 +340,53 @@ async function copySeller() {
   }
 }
 
+async function shareDrop() {
+  if (!dropId.value)
+    return
+  shareFeedback.value = null
+  const url = dropShareUrl(dropId.value)
+  try {
+    const result = await shareDropLink(url)
+    shareFeedback.value = result === 'copied' ? 'Link copied' : null
+    if (shareFeedback.value) {
+      window.setTimeout(() => {
+        shareFeedback.value = null
+      }, 1600)
+    }
+  }
+  catch (error) {
+    if (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError')
+      return
+    try {
+      await navigator.clipboard.writeText(url)
+      shareFeedback.value = 'Link copied'
+      window.setTimeout(() => {
+        shareFeedback.value = null
+      }, 1600)
+    }
+    catch {
+      shareFeedback.value = 'Couldn’t share'
+      window.setTimeout(() => {
+        shareFeedback.value = null
+      }, 1600)
+    }
+  }
+}
+
 function setError(error: unknown) {
+  if (isUserRejection(error)) {
+    errorMessage.value = 'Transaction cancelled.'
+    errorDetail.value = null
+    return
+  }
   errorMessage.value = friendlyUserError(error)
   errorDetail.value = developerErrorDetail(error)
+}
+
+function clearActionUi() {
+  waitingLabel.value = null
+  busy.value = false
+  awaitingWalletConfirm.value = false
 }
 
 function asDrop(decoded: DropData | readonly unknown[]): DropData {
@@ -219,25 +421,321 @@ async function loadPersonalState(id: bigint) {
   allowance.value = decodeCall<bigint>(erc20Abi, 'allowance', allowanceHex)
 }
 
-async function readPublicDrop(id: bigint): Promise<DropData> {
+function resetMotionUiState() {
+  claimPlayToken += 1
+  successPlayToken += 1
+  successMotionActive.value = false
+  successUiReady.value = true
+  claimMotionActive.value = false
+  claimUiReady.value = true
+  claimReceiptConfirmed.value = false
+  claimTransitionActive.value = false
+  claimTransitionAmount.value = ''
+  claimingInFlight.value = false
+  pendingClaimedDrop.value = null
+  pendingClaimedStatus.value = null
+}
+
+function motionScope(): MotionSeenScope | null {
+  if (!dropId.value || !walletAccount.value)
+    return null
+  return {
+    chainId: network.chainDecimal,
+    contractAddress: network.crowdDropAddress,
+    dropId: dropId.value.toString(),
+    walletAddress: walletAccount.value,
+  }
+}
+
+function dropEscrowed(): bigint {
+  return drop.value?.escrowed ?? 0n
+}
+
+function shouldPollNow(): boolean {
+  return shouldPollDrop(statusLabel.value, dropEscrowed())
+}
+
+type MotionPlayer = { play: () => void }
+
+async function mountAndPlayMotion(
+  kind: 'claim' | 'success',
+  token: number,
+  motionStillActive: () => boolean,
+  getRef: () => MotionPlayer | null,
+  onPlayStarted: () => void,
+) {
+  let ticks = MOTION_MOUNT_TICKS
+  while (true) {
+    await nextTick()
+    const currentToken = kind === 'claim' ? claimPlayToken : successPlayToken
+    if (token !== currentToken || !motionStillActive())
+      return
+
+    const attempt = nextMotionPlayAttempt(motionStillActive(), getRef() !== null, ticks)
+    const fx = motionPlaySideEffects(attempt, kind)
+
+    if (attempt === 'play') {
+      getRef()?.play()
+      onPlayStarted()
+      return
+    }
+
+    if (fx.resetMotionUi) {
+      if (kind === 'claim') {
+        if (pendingClaimedDrop.value)
+          commitClaimedState()
+        else {
+          claimMotionActive.value = false
+          claimUiReady.value = true
+          claimTransitionActive.value = false
+          claimingInFlight.value = false
+        }
+      }
+      else {
+        successMotionActive.value = false
+        successUiReady.value = true
+      }
+      return
+    }
+
+    if (attempt === 'wait') {
+      ticks -= 1
+      continue
+    }
+
+    return
+  }
+}
+
+function beginClaimMotionPlayback() {
+  const token = ++claimPlayToken
+  void mountAndPlayMotion(
+    'claim',
+    token,
+    () => claimMotionActive.value,
+    () => claimMotionRef.value,
+    () => {
+      claimReceiptConfirmed.value = false
+      const scope = motionScope()
+      if (scope)
+        markClaimMotionSeen(scope, motionSeen)
+    },
+  )
+}
+
+function beginSuccessMotionPlayback() {
+  const token = ++successPlayToken
+  void mountAndPlayMotion(
+    'success',
+    token,
+    () => successMotionActive.value,
+    () => successMotionRef.value,
+    () => {
+      const scope = motionScope()
+      if (scope)
+        markSuccessMotionSeen(scope, motionSeen)
+    },
+  )
+}
+
+function evaluateMotions() {
+  if (shouldSkipMotionEvaluation(claimMotionActive.value, successMotionActive.value, claimTransitionActive.value))
+    return
+
+  const status = statusLabel.value
+  if (!status)
+    return
+
+  const scope = motionScope()
+  const seenSuccess = scope ? hasSeenSuccessMotion(scope, motionSeen) : true
+  const seenClaim = scope ? hasSeenClaimMotion(scope, motionSeen) : true
+  const seller = isSeller.value
+
+  if (shouldAnimateClaim(status, walletAccount.value, seller, claimReceiptConfirmed.value, seenClaim)) {
+    claimMotionActive.value = true
+    claimUiReady.value = false
+    successMotionActive.value = false
+    successUiReady.value = true
+    beginClaimMotionPlayback()
+    return
+  }
+
+  claimMotionActive.value = false
+  claimUiReady.value = true
+
+  if (shouldAnimateSuccess(status, walletAccount.value, seenSuccess)) {
+    successMotionActive.value = true
+    successUiReady.value = false
+    beginSuccessMotionPlayback()
+    return
+  }
+
+  successMotionActive.value = false
+  successUiReady.value = true
+}
+
+function onSuccessMotionComplete() {
+  successMotionActive.value = false
+  successUiReady.value = true
+}
+
+function onClaimMotionComplete() {
+  commitClaimedState()
+}
+
+function commitClaimedState() {
+  if (pendingClaimedDrop.value) {
+    drop.value = pendingClaimedDrop.value
+    statusLabel.value = pendingClaimedStatus.value ?? 'Claimed'
+    pendingClaimedDrop.value = null
+    pendingClaimedStatus.value = null
+  }
+  claimTransitionActive.value = false
+  claimMotionActive.value = false
+  claimUiReady.value = true
+  claimReceiptConfirmed.value = false
+  claimingInFlight.value = false
+  participantReloadToken.value += 1
+  syncActivePolling()
+}
+
+async function fetchPublicDrop(id: bigint): Promise<{ drop: DropData, statusLabel: DropStatusLabel | 'Unknown' }> {
   const dropHex = await ethCall(network.crowdDropAddress, crowdDropAbi, 'getDrop', [id])
   const parsed = asDrop(decodeCall<DropData | readonly unknown[]>(crowdDropAbi, 'getDrop', dropHex))
   if (parsed.seller === '0x0000000000000000000000000000000000000000')
     throw new Error('unknown drop')
   const statusHex = await ethCall(network.crowdDropAddress, crowdDropAbi, 'statusOf', [id])
   const status = Number(decodeCall<bigint | number>(crowdDropAbi, 'statusOf', statusHex))
-  statusLabel.value = DROP_STATUS_LABELS[status] ?? 'Unknown'
-  return parsed
+  return {
+    drop: parsed,
+    statusLabel: DROP_STATUS_LABELS[status] ?? 'Unknown',
+  }
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+function startClaimTransition() {
+  const scope = motionScope()
+  const seenClaim = scope ? hasSeenClaimMotion(scope, motionSeen) : true
+  if (!shouldAnimateClaim('Claimed', walletAccount.value, isSeller.value, claimReceiptConfirmed.value, seenClaim)) {
+    commitClaimedState()
+    return
+  }
+  claimMotionActive.value = true
+  claimUiReady.value = false
+  beginClaimMotionPlayback()
+}
+
+async function finalizeClaimReceipt() {
+  if (!dropId.value)
+    return
+
+  claimTransitionAmount.value = drop.value
+    ? formatTokenAmount(dropClaimedTotalUnits(drop.value.contribution, drop.value.goal), network.tokenDecimals)
+    : ''
+  const fetched = await fetchPublicDrop(dropId.value)
+  if (fetched.statusLabel !== 'Claimed')
+    throw new Error('Claim confirmed but Drop is not Claimed on-chain.')
+
+  pendingClaimedDrop.value = fetched.drop
+  pendingClaimedStatus.value = fetched.statusLabel
+  claimTransitionActive.value = true
+
+  if (walletAccount.value) {
+    try {
+      await loadPersonalState(dropId.value)
+    }
+    catch {
+      // Keep last good personal state — claim transition still proceeds.
+    }
+  }
+
+  startClaimTransition()
+}
+
+function stopActivePolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function startActivePolling() {
+  stopActivePolling()
+  if (!shouldPollNow())
+    return
+  pollTimer = setInterval(() => {
+    void pollDropState()
+  }, ACTIVE_DROP_POLL_MS)
+}
+
+function syncActivePolling() {
+  if (shouldPausePolling(document.visibilityState) || !shouldPollNow()) {
+    stopActivePolling()
+    return
+  }
+  startActivePolling()
+}
+
+async function pollDropState() {
+  if (!dropId.value || !shouldPollNow() || claimTransitionActive.value)
+    return
+  if (!canStartPollTick(pollInFlight, refreshing.value))
+    return
+
+  pollInFlight = true
+  const id = dropId.value
+  const before = snapshotFromDrop(drop.value, statusLabel.value)
+
+  try {
+    const parsed = await readPublicDrop(id)
+    drop.value = parsed
+    evaluateMotions()
+
+    const after = snapshotFromDrop(drop.value, statusLabel.value)
+    if (after && participantsNeedReload(before, after))
+      participantReloadToken.value += 1
+
+    if (!shouldPollDrop(statusLabel.value, drop.value?.escrowed ?? 0n))
+      stopActivePolling()
+  }
+  catch {
+    // Quiet background poll — keep last known good UI.
+  }
+  finally {
+    pollInFlight = false
+  }
+}
+
+function resumeFromBackground() {
+  if (shouldPausePolling(document.visibilityState))
+    return
+  if (shouldPollNow()) {
+    void pollDropState().finally(() => syncActivePolling())
+  }
+}
+
+function onVisibilityChange() {
+  if (shouldPausePolling(document.visibilityState)) {
+    stopActivePolling()
+    return
+  }
+  resumeFromBackground()
+}
+
+async function readPublicDrop(id: bigint): Promise<DropData> {
+  const fetched = await fetchPublicDrop(id)
+  statusLabel.value = fetched.statusLabel
+  return fetched.drop
 }
 
 async function loadDrop() {
+  if (claimTransitionActive.value)
+    return
+
   const gen = ++loadGeneration
   loadError.value = null
+  refreshError.value = null
   errorDetail.value = null
+  personalReady.value = false
 
   if (!dropId.value) {
     loadError.value = 'This drop ID is not valid.'
@@ -247,124 +745,143 @@ async function loadDrop() {
   }
 
   const id = dropId.value
+  dropStatus.value = `Loading Drop ${id.toString()}…`
 
-  if (walletChecking.value || walletBusy.value || !window.ethereum) {
-    dropStatus.value = walletBusy.value
-      ? `Waiting for ${network.chainName}…`
-      : `Loading Drop ${id.toString()}…`
-    return
-  }
-
-  dropStatus.value = `Waiting for ${network.chainName}…`
-  let onActiveChain = false
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // Public Drop payload — public Polygon RPC, no wallet / eth_accounts required.
+  try {
+    const parsed = await readPublicDrop(id)
     if (gen !== loadGeneration)
       return
-    try {
-      onActiveChain = await confirmActiveChain()
-      if (onActiveChain)
-        break
-      if (attempt < 3) {
-        await sleep(400)
-        continue
-      }
-    }
-    catch (error) {
-      if (gen !== loadGeneration)
-        return
-      if (isUserRejection(error)) {
-        loadError.value = 'Request cancelled.'
-        errorDetail.value = developerErrorDetail(error)
-        dropStatus.value = null
-        return
-      }
-      if (attempt < 3) {
-        await sleep(400)
-        continue
-      }
-      dropStatus.value = `Waiting for ${network.chainName}…`
+    drop.value = parsed
+    loadError.value = null
+    evaluateMotions()
+  }
+  catch (error) {
+    if (gen !== loadGeneration)
+      return
+    if (isUnknownDropError(error)) {
+      loadError.value = 'Drop not found.'
+      errorDetail.value = developerErrorDetail(error)
+      drop.value = null
+      dropStatus.value = null
       return
     }
-  }
-  if (gen !== loadGeneration)
-    return
-  if (!onActiveChain) {
-    if ((walletOnActiveNetwork.value || walletBusy.value) && chainSettleRetries < 6) {
-      chainSettleRetries += 1
-      dropStatus.value = `Waiting for ${network.chainName}…`
+    if (isTransientReadError(error)) {
+      dropStatus.value = `Loading Drop ${id.toString()}…`
       window.setTimeout(() => {
         if (gen === loadGeneration)
           void loadDrop()
       }, 400)
       return
     }
-    chainSettleRetries = 0
-    dropStatus.value = `Switch to ${network.chainName} to load this drop.`
+    loadError.value = 'Could not load this drop. Try again.'
+    errorDetail.value = developerErrorDetail(error)
+    dropStatus.value = null
     return
   }
-  chainSettleRetries = 0
 
-  dropStatus.value = `Loading Drop ${id.toString()}…`
-  const maxAttempts = 3
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (gen !== loadGeneration)
-      return
+  // Personal eligibility (deposit / balance / allowance) — wait until wallet check settles.
+  if (walletChecking.value) {
+    dropStatus.value = null
+    return
+  }
+
+  if (walletAccount.value) {
     try {
-      const stillActive = await confirmActiveChain()
-      if (gen !== loadGeneration)
-        return
-      if (!stillActive) {
-        dropStatus.value = `Waiting for ${network.chainName}…`
-        return
-      }
-      const parsed = await readPublicDrop(id)
-      if (gen !== loadGeneration)
-        return
-      drop.value = parsed
       await loadPersonalState(id)
-      if (gen !== loadGeneration)
-        return
-      dropStatus.value = null
-      loadError.value = null
-      return
     }
     catch (error) {
       if (gen !== loadGeneration)
         return
-      if (isUserRejection(error)) {
-        loadError.value = 'Request cancelled.'
-        errorDetail.value = developerErrorDetail(error)
-        dropStatus.value = null
-        return
-      }
-      if (isUnknownDropError(error)) {
-        loadError.value = 'Drop not found.'
-        errorDetail.value = developerErrorDetail(error)
-        dropStatus.value = null
-        return
-      }
-      const chainOk = await confirmActiveChain().catch(() => false)
+      errorDetail.value = developerErrorDetail(error)
+      deposit.value = 0n
+      tokenBalance.value = 0n
+      allowance.value = 0n
+    }
+  }
+  else {
+    deposit.value = 0n
+    tokenBalance.value = 0n
+    allowance.value = 0n
+  }
+
+  if (gen !== loadGeneration)
+    return
+  personalReady.value = true
+  dropStatus.value = null
+  participantReloadToken.value += 1
+  syncActivePolling()
+}
+
+function voidPendingWalletConfirm() {
+  if (!awaitingWalletConfirm.value)
+    return
+  actionAbort?.abort()
+  actionAbort = null
+}
+
+/**
+ * Manual Refresh: re-read public Drop + wallet-specific state without a full page reload.
+ * If a Join/Enable/Withdraw confirmation was dismissed and left the UI stuck, Refresh
+ * voids that pending send so actions are tappable again.
+ * On failure, keep the last good screen data and show a quiet inline error.
+ */
+async function refreshDrop() {
+  if (refreshing.value || !dropId.value || claimTransitionActive.value)
+    return
+
+  // Recover from swipe-dismissed confirmation sheets (provider often hangs).
+  if (awaitingWalletConfirm.value)
+    voidPendingWalletConfirm()
+
+  refreshing.value = true
+  refreshError.value = null
+  const gen = ++loadGeneration
+  const id = dropId.value
+
+  try {
+    const parsed = await readPublicDrop(id)
+    if (gen !== loadGeneration)
+      return
+    drop.value = parsed
+    evaluateMotions()
+
+    if (!walletChecking.value && walletAccount.value) {
+      await loadPersonalState(id)
       if (gen !== loadGeneration)
         return
-      if (!chainOk) {
-        dropStatus.value = `Waiting for ${network.chainName}…`
-        return
-      }
-      const canRetry = isTransientReadError(error) && attempt < maxAttempts
-      if (canRetry) {
-        dropStatus.value = `Loading Drop ${id.toString()}…`
-        await sleep(400)
-        continue
-      }
-      loadError.value = 'Could not load this drop. Try again.'
-      errorDetail.value = developerErrorDetail(error)
-      dropStatus.value = null
-      return
+      personalReady.value = true
     }
+    else if (!walletChecking.value && !walletAccount.value) {
+      deposit.value = 0n
+      tokenBalance.value = 0n
+      allowance.value = 0n
+      personalReady.value = true
+    }
+
+    loadError.value = null
+    participantReloadToken.value += 1
+  }
+  catch {
+    if (gen !== loadGeneration)
+      return
+    refreshError.value = 'Couldn’t refresh. Try again.'
+  }
+  finally {
+    if (gen === loadGeneration)
+      refreshing.value = false
   }
 }
 
-async function runAction(label: string, work: () => Promise<string>) {
+async function runAction(
+  label: string,
+  work: (signal: AbortSignal) => Promise<string>,
+  options?: {
+    onReceiptConfirmed?: () => void
+    afterReceipt?: () => Promise<void>
+    inlinePending?: boolean
+  },
+) {
   errorMessage.value = null
   errorDetail.value = null
   if (!walletAccount.value) {
@@ -375,21 +892,40 @@ async function runAction(label: string, work: () => Promise<string>) {
     errorMessage.value = `Switch to ${network.chainName} before continuing.`
     return
   }
+
+  actionAbort?.abort()
+  const ac = new AbortController()
+  actionAbort = ac
+
   busy.value = true
+  awaitingWalletConfirm.value = true
   waitingLabel.value = `Confirm ${label} in Nimiq Pay…`
   try {
-    const hash = await work()
+    const hash = await work(ac.signal)
+    if (actionAbort === ac)
+      awaitingWalletConfirm.value = false
     lastTxHash.value = hash
-    waitingLabel.value = 'Waiting for confirmation…'
+    if (options?.inlinePending) {
+      awaitingWalletConfirm.value = false
+      waitingLabel.value = null
+    }
+    else {
+      waitingLabel.value = 'Waiting for confirmation…'
+    }
     await waitForReceipt(hash)
-    await loadDrop()
+    options?.onReceiptConfirmed?.()
+    if (options?.afterReceipt)
+      await options.afterReceipt()
+    else
+      await loadDrop()
   }
   catch (error) {
     setError(error)
   }
   finally {
-    waitingLabel.value = null
-    busy.value = false
+    if (actionAbort === ac)
+      actionAbort = null
+    clearActionUi()
   }
 }
 
@@ -408,34 +944,49 @@ function approve() {
   if (plan.kind === 'none')
     return
   const amount = reusableApprovalAmount(drop.value.contribution, network.reusableAllowanceUnits)
-  return runAction('Enable CrowdDrop', async () => {
+  return runAction('Enable CrowdDrop', async (signal) => {
     if (plan.kind === 'reset-then-approve') {
       waitingLabel.value = 'Confirm the reset in Nimiq Pay. A second confirmation will enable CrowdDrop…'
-      const resetHash = await sendTx(network.tokenAddress, erc20Abi, 'approve', [spender, 0n])
+      const resetHash = await sendTx(network.tokenAddress, erc20Abi, 'approve', [spender, 0n], { signal })
       lastTxHash.value = resetHash
+      awaitingWalletConfirm.value = false
       await waitForReceipt(resetHash)
+      awaitingWalletConfirm.value = true
       waitingLabel.value = 'Confirm Enable CrowdDrop in Nimiq Pay…'
     }
-    return sendTx(network.tokenAddress, erc20Abi, 'approve', [spender, amount])
+    return sendTx(network.tokenAddress, erc20Abi, 'approve', [spender, amount], { signal })
   })
 }
 
 function join() {
   if (!dropId.value)
     return
-  return runAction('Join', () => sendTx(network.crowdDropAddress, crowdDropAbi, 'join', [dropId.value]))
+  return runAction('Join', signal =>
+    sendTx(network.crowdDropAddress, crowdDropAbi, 'join', [dropId.value], { signal }))
 }
 
 function withdraw() {
   if (!dropId.value)
     return
-  return runAction('Withdraw', () => sendTx(network.crowdDropAddress, crowdDropAbi, 'withdraw', [dropId.value]))
+  return runAction('Withdraw', signal =>
+    sendTx(network.crowdDropAddress, crowdDropAbi, 'withdraw', [dropId.value], { signal }))
 }
 
 function claim() {
   if (!dropId.value)
     return
-  return runAction('Claim', () => sendTx(network.crowdDropAddress, crowdDropAbi, 'claim', [dropId.value]))
+  claimingInFlight.value = true
+  return runAction('Claim', signal =>
+    sendTx(network.crowdDropAddress, crowdDropAbi, 'claim', [dropId.value], { signal }), {
+    inlinePending: true,
+    onReceiptConfirmed: () => {
+      claimReceiptConfirmed.value = true
+    },
+    afterReceipt: finalizeClaimReceipt,
+  }).finally(() => {
+    if (!claimTransitionActive.value && !claimMotionActive.value)
+      claimingInFlight.value = false
+  })
 }
 
 watch(
@@ -445,38 +996,64 @@ watch(
   },
 )
 
+watch(walletAccount, () => {
+  if (drop.value && statusLabel.value)
+    evaluateMotions()
+})
+
+watch(dropId, () => {
+  resetMotionUiState()
+  stopActivePolling()
+})
+
+watch(statusLabel, () => {
+  syncActivePolling()
+})
+
 onMounted(() => {
-  timer = setInterval(() => {
+  clockTimer = setInterval(() => {
     nowSec.value = Math.floor(Date.now() / 1000)
   }, 1000)
   if (dropId.value)
     saveLastOpenedDrop(dropId.value.toString())
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('focus', resumeFromBackground)
   void loadDrop()
 })
 
 onUnmounted(() => {
-  if (timer)
-    clearInterval(timer)
+  if (clockTimer)
+    clearInterval(clockTimer)
+  stopActivePolling()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('focus', resumeFromBackground)
 })
 </script>
 
 <template>
-  <section class="drop-view">
-    <header class="top">
-      <a class="back" href="/?home=1" @click.prevent="goToHome">←</a>
-      <p class="drop-meta">
-        Drop #{{ dropId?.toString() ?? dropParam }}
-        <template v-if="statusLabel"> · {{ statusLabel }}</template>
-      </p>
+  <section class="drop-view utility">
+    <header class="app-head">
+      <p class="brand">CrowdDrop</p>
+      <WalletBar compact utility :extra-busy="busy" />
     </header>
 
-    <WalletBar compact :extra-busy="busy" />
+    <div class="nav">
+      <a class="back-title" href="/?home=1" @click.prevent="goBackOrHome">
+        <span class="chev">←</span>
+        <span>Drop #{{ dropId?.toString() ?? dropParam }}</span>
+      </a>
+      <span
+        v-if="visibleStatusLabel"
+        class="nav-status"
+        :class="{
+          active: visibleStatusLabel === 'Active',
+          success: visibleStatusLabel === 'Successful' || visibleStatusLabel === 'Claimed',
+          expired: visibleStatusLabel === 'Expired',
+        }"
+      >{{ visibleStatusLabel }}</span>
+    </div>
 
-    <p v-if="dropStatus || (requiredAction && !drop)" class="wait">
-      {{ dropStatus ?? requiredAction }}
-    </p>
-    <p v-else-if="requiredAction && drop" class="wait warn">{{ requiredAction }}</p>
-
+    <p v-if="dropStatus && !drop" class="wait">{{ dropStatus }}</p>
     <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     <p v-if="loadError" class="error">{{ loadError }}</p>
     <details v-if="errorDetail" class="dev">
@@ -485,131 +1062,187 @@ onUnmounted(() => {
     </details>
     <p v-if="waitingLabel" class="wait">{{ waitingLabel }}</p>
 
-    <div v-if="drop" class="hero-block">
-      <template v-if="statusLabel === 'Successful'">
-        <p class="state-kicker success-tone">{{ badge }}</p>
-        <h1 class="headline">Drop Unlocked.</h1>
-        <p class="hero-sub">
-          {{ drop.buyerCount.toString() }} joined · {{ escrowedMoney }} pooled
-        </p>
-      </template>
-      <template v-else-if="statusLabel === 'Claimed'">
-        <p class="state-kicker success-tone">{{ badge }}</p>
-        <h1 class="headline">Claimed.</h1>
-        <p class="hero-sub">The seller has claimed the pooled funds.</p>
-      </template>
-      <template v-else-if="statusLabel === 'Expired'">
-        <p class="state-kicker expired-tone">{{ badge }}</p>
-        <h1 class="headline">Drop Expired.</h1>
-        <p v-if="hasDeposit" class="hero-sub">Your contribution is available to withdraw.</p>
-        <p v-else class="hero-sub">This Drop did not reach its goal.</p>
-      </template>
-      <template v-else>
-        <h1 class="amount-hero">
-          <span class="dollars">{{ contributionMoney }}</span>
-          <span class="per">USDT per person</span>
-        </h1>
-        <div class="bar" aria-hidden="true">
-          <span class="fill" :style="{ width: `${progress}%` }" />
-        </div>
-        <p class="progress-meta">{{ progressMeta }}</p>
-        <div class="info-row">
-          <span>{{ escrowedMoney }} pooled</span>
-          <span>approval up to {{ approvalCapLabel() }}</span>
-        </div>
-        <p class="trust">
-          Funds stay in the CrowdDrop contract until the goal is reached or the Drop expires. Only the creator can claim a successful Drop.
-        </p>
-      </template>
+    <template v-if="drop">
+      <h1 class="amount">
+        <span class="num">{{ contributionHome }}</span>
+        <span class="per">{{ tokenLabel }} per person</span>
+      </h1>
 
-      <div class="seller">
-        <span>Created by {{ shortenAddress(drop.seller) }}<template v-if="isSeller"> (you)</template></span>
-        <button type="button" class="copy" :title="sellerCopied ? 'Copied' : 'Copy address'" @click="copySeller">
-          {{ sellerCopied ? '✓' : '⎘' }}
+      <DropSuccessMotionContent
+        v-if="successMotionActive"
+        ref="successMotionRef"
+        :goal="drop.goal"
+        dots-only
+        @motion-complete="onSuccessMotionComplete"
+      />
+      <ClaimCompleteMotionContent
+        v-else-if="claimMotionActive"
+        ref="claimMotionRef"
+        :goal="drop.goal"
+        :claimed-amount="claimTransitionAmount"
+        :token-label="tokenLabel"
+        @motion-complete="onClaimMotionComplete"
+      />
+      <ParticipantDots
+        v-else
+        :joined="drop.buyerCount"
+        :goal="drop.goal"
+        :tone="dotsTone"
+      />
+
+      <div class="facts">
+        <p class="progress">{{ progressLine }}</p>
+        <p v-if="remaining" class="meta-line">{{ remaining }} remaining</p>
+        <p class="pooled">{{ fundsLine }}</p>
+      </div>
+
+      <p v-if="isActiveBuyerSurface" class="trust">
+        Funds stay in the contract until the Drop succeeds or expires.
+      </p>
+
+      <p class="seller">
+        <button type="button" class="seller-btn" @click="copySeller">
+          Created by {{ shortenAddress(drop.seller) }}
+          <span v-if="sellerCopied" class="copied">Copied</span>
         </button>
+      </p>
+
+      <div class="meta-tools">
+        <button
+          type="button"
+          class="refresh-btn"
+          :disabled="refreshing"
+          :aria-busy="refreshing"
+          @click="refreshDrop"
+        >
+          <span class="refresh-hit">{{ refreshing ? '↻ Refreshing…' : '↻ Refresh' }}</span>
+        </button>
+        <p v-if="refreshError" class="refresh-error">{{ refreshError }}</p>
       </div>
-    </div>
 
-    <div v-if="drop" class="divider" />
+      <div class="rule" />
 
-    <div v-if="drop && isSeller && walletReady" class="actions">
-      <p v-if="statusLabel === 'Active'" class="note">Waiting for buyers.</p>
-      <p v-if="statusLabel === 'Successful'" class="note">Goal reached. Funds are ready to claim.</p>
-      <p v-if="statusLabel === 'Expired'" class="note">Buyers can withdraw their deposits. You cannot claim.</p>
-      <p v-if="statusLabel === 'Claimed'" class="note">This Drop is complete.</p>
-      <button
-        v-if="canClaim"
-        type="button"
-        class="primary success"
-        :disabled="busy"
-        @click="claim"
-      >
-        Claim {{ escrowedMoney }} USDT
-      </button>
-    </div>
+      <!-- Active Seller -->
+      <template v-if="isActiveSellerDetail">
+        <p class="note">You created this Drop.</p>
+        <p class="note">{{ waitingBuyersLine }}</p>
+        <button type="button" class="share" :disabled="busy" @click="shareDrop">
+          <span class="share-icon" aria-hidden="true">↗</span>
+          Share Drop
+        </button>
+        <p v-if="shareFeedback" class="share-feedback">{{ shareFeedback }}</p>
+      </template>
 
-    <div v-else-if="drop && walletReady" class="actions">
-      <div v-if="hasDeposit && statusLabel === 'Active'" class="joined">
-        <p class="joined-title">✓ You’re in this Drop</p>
-        <p class="joined-copy">
-          Your {{ formatTokenAmount(deposit, network.tokenDecimals) }} USDT is pooled and waiting on the rest.
+      <!-- Active Buyer / Joined Buyer -->
+      <template v-else-if="isActiveBuyerDetail">
+        <p v-if="requiredAction" class="wait warn">{{ requiredAction }}</p>
+        <p v-else-if="buyerEligibilityPending" class="wait muted">Loading…</p>
+
+        <template v-else-if="isJoinedBuyerSurface">
+          <div class="joined">
+            <p class="joined-title">You’re in this Drop</p>
+            <p class="joined-copy">
+              Your {{ depositPlain }} {{ tokenLabel }} is pooled and waiting on the rest.
+            </p>
+          </div>
+          <button
+            v-if="showJoinedWithdraw"
+            type="button"
+            class="secondary"
+            :disabled="busy"
+            @click="withdraw"
+          >
+            Withdraw {{ depositPlain }} {{ tokenLabel }}
+          </button>
+        </template>
+
+        <template v-else-if="walletAccount && walletOnActiveNetwork">
+          <p v-if="showEnableCrowdDrop && insufficientBalance" class="error">
+            Not enough {{ tokenLabel }} to join.
+          </p>
+          <p v-if="showEnableCrowdDrop && needsApprovalReset" class="note">
+            Nimiq Pay will ask you to confirm twice: first to reset the old allowance, then to enable CrowdDrop.
+          </p>
+          <button
+            v-if="showEnableCrowdDrop"
+            type="button"
+            class="primary"
+            :disabled="busy"
+            @click="approve"
+          >
+            Enable CrowdDrop
+          </button>
+          <p v-if="showEnableCrowdDrop" class="help">
+            Approve once for future Drops, up to {{ REUSABLE_ALLOWANCE_TOKENS }} USDT.
+          </p>
+          <button
+            v-if="showJoinCrowdDrop"
+            type="button"
+            class="primary"
+            :disabled="busy"
+            @click="join"
+          >
+            Join for {{ contributionPlain }} {{ tokenLabel }}
+          </button>
+          <p
+            v-if="personalReady && !needsApproval && insufficientBalance && !showJoinCrowdDrop && !showEnableCrowdDrop"
+            class="error"
+          >
+            Not enough {{ tokenLabel }} to join.
+          </p>
+        </template>
+      </template>
+
+      <!-- Successful -->
+      <template v-else-if="visibleStatusLabel === 'Successful' && successUiReady && !claimMotionActive">
+        <p v-if="requiredAction && (canClaim || hasDeposit)" class="wait warn">{{ requiredAction }}</p>
+        <template v-else-if="isSeller && walletReady">
+          <p v-if="!claimingInFlight" class="note">The goal was reached. You can claim the pooled funds.</p>
+          <button
+            v-if="canClaim || claimingInFlight"
+            type="button"
+            class="primary success"
+            :disabled="busy || claimingInFlight"
+            @click="claim"
+          >
+            {{ claimingInFlight ? 'Claiming…' : `Claim ${escrowedPlain} ${tokenLabel}` }}
+          </button>
+        </template>
+        <p v-else-if="hasDeposit" class="note">
+          You joined this Drop. The seller can now claim the pooled funds.
         </p>
-      </div>
+        <p v-else class="note">The goal was reached.</p>
+      </template>
 
-      <p v-if="statusLabel === 'Successful' && hasDeposit" class="note">
-        This Drop succeeded. Funds are locked for the seller to claim.
-      </p>
-      <p v-if="statusLabel === 'Claimed'" class="note">This Drop is complete.</p>
+      <!-- Claimed -->
+      <template v-else-if="showStaticClaimedUi">
+        <p class="note">The seller has claimed the pooled funds.</p>
+        <button type="button" class="text-action" @click="goBackOrHome">Back to Home</button>
+      </template>
 
-      <p v-if="canApprove && insufficientBalance" class="error">
-        Not enough {{ tokenLabel }} to join.
-      </p>
-      <p v-if="canApprove && needsApprovalReset" class="note">
-        Nimiq Pay will ask you to confirm twice: first to reset the old allowance, then to enable CrowdDrop.
-      </p>
+      <!-- Expired -->
+      <template v-else-if="statusLabel === 'Expired'">
+        <p v-if="requiredAction && hasDeposit" class="wait warn">{{ requiredAction }}</p>
+        <template v-else-if="showExpiredWithdraw">
+          <p class="note">This Drop did not reach its goal.</p>
+          <button type="button" class="primary" :disabled="busy" @click="withdraw">
+            Withdraw {{ depositPlain }} {{ tokenLabel }}
+          </button>
+          <p class="help">Your contribution is available to withdraw.</p>
+        </template>
+        <template v-else-if="isSeller">
+          <p class="note">This Drop did not reach its goal.</p>
+        </template>
+        <p v-else class="note">This Drop did not reach its goal.</p>
+      </template>
 
-      <button
-        v-if="canApprove"
-        type="button"
-        class="primary"
-        :disabled="busy"
-        @click="approve"
-      >
-        Enable CrowdDrop
-      </button>
-      <p v-if="canApprove" class="support">
-        One-time approval, reusable across future Drops up to {{ approvalCapLabel() }} USDT.
-      </p>
-
-      <button
-        v-if="canJoin"
-        type="button"
-        class="primary"
-        :disabled="busy"
-        @click="join"
-      >
-        Join for {{ contributionMoney }} USDT
-      </button>
-
-      <p v-if="statusLabel === 'Active' && !hasDeposit && !needsApproval && insufficientBalance" class="error">
-        Not enough {{ tokenLabel }} to join.
-      </p>
-
-      <button
-        v-if="canWithdraw"
-        type="button"
-        class="ghost"
-        :disabled="busy"
-        @click="withdraw"
-      >
-        Withdraw {{ depositMoney }} USDT
-      </button>
-    </div>
-
-    <div class="footer-actions">
-      <button type="button" class="text-btn" :disabled="busy || walletBusy" @click="loadDrop">Refresh</button>
-      <p v-if="lastTxHash" class="hash">Last tx: {{ lastTxHash }}</p>
-    </div>
+      <DropParticipants
+        :drop-id="dropId"
+        :goal="drop.goal"
+        :viewer-address="walletAccount"
+        :reload-token="participantReloadToken"
+      />
+    </template>
   </section>
 </template>
 
@@ -617,213 +1250,297 @@ onUnmounted(() => {
 .drop-view {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0;
+  font-family: Inter, system-ui, sans-serif;
+  color: #141414;
 }
-.top {
+.app-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.brand {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 10px;
+  margin-bottom: 16px;
+  min-height: 36px;
 }
-.back {
-  color: var(--cd-cream);
+.back-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #141414;
   text-decoration: none;
-  font-size: 1.25rem;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 36px;
+}
+.chev {
+  font-weight: 500;
   line-height: 1;
-  padding: 0.25rem 0.15rem;
 }
-.drop-meta {
-  margin: 0;
-  color: var(--cd-tan);
-  font-size: 0.82rem;
+.nav-status {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 0 auto;
+  color: #6A6A6A;
 }
-.hero-block {
+.nav-status.active { color: #B9430E; }
+.nav-status.success { color: #1F7A45; }
+.nav-status.expired { color: #A65A16; }
+
+.amount {
+  margin: 0 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  margin-top: 0.35rem;
+  gap: 2px;
 }
-.state-kicker {
-  margin: 0;
-  font-size: 0.72rem;
+.num {
+  font-size: 34px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.success-tone {
-  color: var(--cd-success-text);
-}
-.expired-tone {
-  color: var(--cd-expired);
-}
-.headline {
-  margin: 0;
-  font-family: var(--cd-font-serif);
-  font-size: clamp(2rem, 7vw, 2.4rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
-.amount-hero {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-.dollars {
-  font-family: var(--cd-font-serif);
-  font-size: clamp(2.6rem, 10vw, 3.4rem);
-  font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1;
-  color: var(--cd-cream);
 }
-.per,
-.hero-sub {
-  margin: 0;
-  color: var(--cd-tan);
-  font-size: 0.92rem;
+.per {
+  font-size: 13px;
+  color: #6A6A6A;
+  font-weight: 500;
 }
-.bar {
-  height: 5px;
-  border-radius: 999px;
-  background: #2a2a2a;
-  overflow: hidden;
-  margin-top: 0.25rem;
-}
-.fill {
-  display: block;
-  height: 100%;
-  background: var(--cd-orange);
-}
-.progress-meta,
-.info-row,
-.trust,
-.seller,
-.note,
-.support {
-  margin: 0;
-  color: var(--cd-tan);
-  font-size: 0.84rem;
-  line-height: 1.4;
-}
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-.trust {
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: var(--cd-muted);
-}
-.seller {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-}
-.copy {
-  border: none;
-  background: transparent;
-  color: var(--cd-muted);
-  cursor: pointer;
-  padding: 0.15rem 0.25rem;
-  font-size: 0.9rem;
-}
-.divider {
-  height: 1px;
-  background: var(--cd-border);
-  margin: 0.35rem 0;
-}
-.actions {
+.facts {
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 4px;
 }
-.joined {
-  background: var(--cd-joined);
-  border: 1px solid var(--cd-joined-border);
-  border-radius: var(--cd-radius);
-  padding: 1rem;
-}
-.joined-title {
-  margin: 0 0 0.35rem;
-  color: var(--cd-cream);
-  font-weight: 700;
-}
-.joined-copy {
+.progress,
+.meta-line,
+.pooled,
+.trust,
+.note,
+.help {
   margin: 0;
-  color: var(--cd-tan);
-  font-size: 0.88rem;
+  font-size: 13px;
+  color: #6A6A6A;
   line-height: 1.4;
 }
-button.primary,
-button.ghost {
-  min-height: 50px;
-  border-radius: 14px;
-  padding: 0.85rem 1rem;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
+.progress,
+.pooled {
+  color: #141414;
+  font-weight: 500;
 }
-button.primary {
-  background: var(--cd-orange);
-  color: var(--cd-cream);
-  border: 1px solid transparent;
+.trust {
+  margin-top: 12px;
+  font-size: 12px;
 }
-button.primary.success {
-  background: var(--cd-success);
+.seller {
+  margin-top: 10px;
 }
-button.ghost {
+.seller-btn {
+  border: none;
   background: transparent;
-  color: var(--cd-cream);
-  border: 1px solid var(--cd-border);
+  color: #8A8A8A;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
 }
-button:disabled {
+.copied {
+  margin-left: 6px;
+  color: #1F7A45;
+  font-size: 11px;
+}
+.meta-tools {
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: #8A8A8A;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0;
+  min-height: 44px;
+  min-width: 44px;
+  cursor: pointer;
+  text-align: left;
+}
+.refresh-hit {
+  display: inline-block;
+  padding: 2px 0;
+  line-height: 1.3;
+}
+.refresh-btn:hover:not(:disabled) { color: #6A6A6A; }
+.refresh-btn:active:not(:disabled) {
+  color: #141414;
+  opacity: 0.85;
+}
+.refresh-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.support {
-  text-align: center;
-  font-size: 0.78rem;
-}
-.wait {
+.refresh-error {
   margin: 0;
+  font-size: 11px;
+  color: #B9430E;
+  line-height: 1.35;
+}
+.rule {
+  height: 1px;
+  background: #E2E2DE;
+  margin: 14px 0;
+}
+.primary,
+.secondary {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--cd-cream);
+  cursor: pointer;
+  padding: 10px 12px;
 }
-.wait.warn {
-  color: var(--cd-orange);
+.primary {
+  border: 1px solid #C94E12;
+  background: #C94E12;
+  color: #fff;
 }
-.error {
-  margin: 0;
-  color: var(--cd-error);
+.primary.success {
+  border-color: #1F7A45;
+  background: #1F7A45;
 }
-.footer-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
+.primary:active:not(:disabled) {
+  background: #B9430E;
+  border-color: #B9430E;
 }
-.text-btn {
-  align-self: flex-start;
+.secondary {
+  border: 1px solid #E2E2DE;
+  background: transparent;
+  color: #141414;
+  font-weight: 500;
+}
+.secondary:active:not(:disabled) {
+  background: #EFEFEA;
+}
+.share {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  border: 1px solid #E2E2DE;
+  background: transparent;
+  color: #141414;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  padding: 8px 12px;
+  min-height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  width: auto;
+}
+.share-icon {
+  font-size: 13px;
+  line-height: 1;
+  color: #6A6A6A;
+}
+.share-feedback {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #6A6A6A;
+}
+.text-action {
+  display: inline-block;
+  margin-top: 4px;
   border: none;
   background: transparent;
-  color: var(--cd-muted);
+  color: #6A6A6A;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 0;
+  min-height: 32px;
   cursor: pointer;
-  padding: 0.25rem 0;
-  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
-.hash,
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.help {
+  margin-top: 8px;
+  font-size: 12px;
+  text-align: center;
+}
+.note {
+  margin-bottom: 8px;
+}
+.status-line {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1F7A45;
+}
+.wait {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #141414;
+}
+.wait.warn { color: #B9430E; }
+.wait.muted {
+  color: #6A6A6A;
+  font-weight: 500;
+}
+.error {
+  margin: 0 0 10px;
+  color: #B9430E;
+  font-size: 13px;
+}
 .dev {
-  font-size: 0.75rem;
-  color: var(--cd-muted);
-  overflow-wrap: anywhere;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #6A6A6A;
 }
 pre {
   white-space: pre-wrap;
-  font-size: 0.72rem;
+  font-size: 11px;
+}
+.joined {
+  margin-bottom: 12px;
+  background: #F3EBE4;
+  border-left: 2px solid #C94E12;
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+}
+.joined-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 650;
+  color: #141414;
+}
+.joined-copy {
+  margin: 0;
+  font-size: 13px;
+  color: #6A6A6A;
+  line-height: 1.4;
 }
 </style>

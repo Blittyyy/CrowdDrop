@@ -2,6 +2,7 @@
 import { init } from '@nimiq/mini-app-sdk'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { applySavedDrop, resolveAppRoute, wantsHomeScreen, type AppRoute } from './appRoute'
+import { registerNavigationSync } from './appNavigation'
 import CrowdDropCreate from './CrowdDropCreate.vue'
 import CrowdDropView from './CrowdDropView.vue'
 import DevTools from './DevTools.vue'
@@ -31,7 +32,6 @@ function readRoute(): AppRoute {
 }
 
 const route = ref<AppRoute>(readRoute())
-const routeKey = computed(() => JSON.stringify(route.value))
 const isDev = computed(() => route.value.name === 'dev')
 const isShowcase = computed(() => route.value.name === 'showcase')
 const isHome = computed(() => route.value.name === 'create')
@@ -47,21 +47,25 @@ onMounted(() => {
     init({ timeout: 10_000 }).catch(() => undefined)
     void initWalletSession()
   }
+  registerNavigationSync(syncRoute)
   syncRoute()
   window.addEventListener('popstate', syncRoute)
   window.addEventListener('hashchange', syncRoute)
-  window.addEventListener('pageshow', syncRoute)
 })
 
 watch(isHome, (home) => {
   document.body.classList.toggle('cd-home', home)
 }, { immediate: true })
 
+watch(isDrop, (drop) => {
+  document.body.classList.toggle('cd-drop', drop)
+}, { immediate: true })
+
 onUnmounted(() => {
   document.body.classList.remove('cd-home')
+  document.body.classList.remove('cd-drop')
   window.removeEventListener('popstate', syncRoute)
   window.removeEventListener('hashchange', syncRoute)
-  window.removeEventListener('pageshow', syncRoute)
 })
 </script>
 
@@ -71,21 +75,14 @@ onUnmounted(() => {
     :class="{
       'dev-shell': isDev,
       'home-shell': isHome,
-      'product-shell': isDrop,
+      'drop-shell': isDrop,
       'showcase-shell': isShowcase,
     }"
   >
-    <Showcase v-if="route.name === 'showcase'" :key="routeKey" />
-    <CrowdDropCreate v-else-if="route.name === 'create'" :key="routeKey" />
-    <CrowdDropView v-else-if="route.name === 'drop'" :key="routeKey" :drop-param="route.dropParam" />
+    <Showcase v-if="route.name === 'showcase'" />
+    <CrowdDropCreate v-else-if="route.name === 'create'" />
+    <CrowdDropView v-else-if="route.name === 'drop'" :drop-param="route.dropParam" />
     <DevTools v-else />
-    <p v-if="route.name !== 'dev' && route.name !== 'showcase'" class="dev-link">
-      <details>
-        <summary>More</summary>
-        <a href="/showcase">Design showcase</a>
-        <a href="/dev">Development tools</a>
-      </details>
-    </p>
   </main>
 </template>
 
@@ -96,6 +93,16 @@ onUnmounted(() => {
   padding: 0.85rem 1rem 1.75rem;
 }
 .home-shell {
+  width: 100%;
+  max-width: min(100%, 26rem);
+  margin: 0 auto;
+  padding: 14px 16px 28px;
+  min-height: 100dvh;
+  background: #F6F6F4;
+  color: #141414;
+  font-family: Inter, system-ui, sans-serif;
+}
+.drop-shell {
   width: 100%;
   max-width: min(100%, 26rem);
   margin: 0 auto;
@@ -119,28 +126,5 @@ onUnmounted(() => {
   border-radius: 12px;
   padding: 1rem;
   margin-top: 0.5rem;
-}
-.dev-link {
-  margin-top: 1.5rem;
-  font-size: 0.72rem;
-  color: #6A6A6A;
-  opacity: 0.65;
-}
-.home-shell .dev-link {
-  color: #6A6A6A;
-}
-.dev-link summary {
-  cursor: pointer;
-  color: inherit;
-  list-style: none;
-}
-.dev-link summary::-webkit-details-marker {
-  display: none;
-}
-.dev-link a {
-  display: block;
-  margin-top: 0.35rem;
-  color: inherit;
-  font-size: 0.72rem;
 }
 </style>

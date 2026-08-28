@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { parseTokenAmount, formatTokenAmount } from '../src/tokenMath.ts'
+import { parseTokenAmount, formatTokenAmount, dropClaimedTotalUnits } from '../src/tokenMath.ts'
 import { STABLECOIN_DECIMALS } from '../src/escrowConfig.ts'
 
 assert.equal(STABLECOIN_DECIMALS, 6)
@@ -37,6 +37,11 @@ rejects('0.0000001')
 rejects('1,234.56')
 rejects('+1')
 
+assert.equal(dropClaimedTotalUnits(100n, 2n), 200n)
+assert.equal(formatTokenAmount(dropClaimedTotalUnits(100_000n, 2n), 6), '0.2')
+assert.equal(formatTokenAmount(dropClaimedTotalUnits(100n, 2n), 6), '0.0002')
+assert.equal(formatTokenAmount(dropClaimedTotalUnits(5_000_000n, 10n), 6), '50')
+
 let passed = 0
 const cases: Array<[string, bigint]> = [
   ['0.10', 100_000n],
@@ -51,4 +56,4 @@ for (const [input, expected] of cases) {
   passed++
 }
 
-console.log(`tokenMath: ${passed + 20} checks passed (includes 0.10 USDT → 100000)`)
+console.log(`tokenMath: ${passed + 24} checks passed (includes 0.10 USDT → 100000)`)
