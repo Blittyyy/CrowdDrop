@@ -9,3 +9,5 @@ dist
 artifacts
 cache
 typechain-types
+
+.vercel

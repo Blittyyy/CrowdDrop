@@ -35,6 +35,12 @@ const signingRecovered = ref<string | null>(null)
 const signingWalletMatch = ref<boolean | null>(null)
 const signingDevDetails = ref<string | null>(null)
 
+type SupabaseHealthUiState = 'idle' | 'running' | 'success' | 'failure'
+
+const supabaseState = ref<SupabaseHealthUiState>('idle')
+const supabaseError = ref<string | null>(null)
+const supabaseHealth = ref<Record<string, unknown> | null>(null)
+
 onMounted(async () => {
   ethereumAvailable.value = Boolean(window.ethereum)
 
@@ -202,6 +208,63 @@ async function testEip712Signing() {
     signingError.value = formatWalletError(error)
   }
 }
+
+function resetSupabaseResult() {
+  supabaseState.value = 'idle'
+  supabaseError.value = null
+  supabaseHealth.value = null
+}
+
+function formatSupabaseHealthSummary(payload: Record<string, unknown>): string {
+  if (payload.ok === true)
+    return 'Supabase backend ready'
+
+  if (payload.error === 'supabase_not_configured') {
+    const missing = Array.isArray(payload.missing) ? payload.missing.join(', ') : 'env vars'
+    return `Supabase not configured (${missing})`
+  }
+
+  const parts: string[] = []
+  if (payload.database !== true)
+    parts.push('database')
+  if (payload.productsTable !== true)
+    parts.push('products table')
+  if (payload.authChallengesTable !== true)
+    parts.push('auth_challenges table')
+  if (payload.coverBucket !== true)
+    parts.push('product-covers bucket')
+  if (payload.assetBucket !== true)
+    parts.push('product-assets bucket')
+  if (payload.assetBucketPrivate !== true)
+    parts.push('private product-assets')
+  if (payload.error && typeof payload.error === 'string')
+    parts.push(String(payload.error))
+
+  return parts.length ? `Missing: ${parts.join(', ')}` : 'Supabase setup incomplete'
+}
+
+async function checkSupabaseSetup() {
+  resetSupabaseResult()
+  supabaseState.value = 'running'
+
+  try {
+    const response = await fetch('/api/dev/supabase-health')
+    const payload = await response.json() as Record<string, unknown>
+    supabaseHealth.value = payload
+
+    if (response.ok && payload.ok === true) {
+      supabaseState.value = 'success'
+      return
+    }
+
+    supabaseState.value = 'failure'
+    supabaseError.value = formatSupabaseHealthSummary(payload)
+  }
+  catch (error) {
+    supabaseState.value = 'failure'
+    supabaseError.value = formatWalletError(error)
+  }
+}
 </script>
 
 <template>
@@ -273,6 +336,33 @@ async function testEip712Signing() {
       <details v-if="signingDevDetails" class="dev-details">
         <summary>Dev details</summary>
         <pre>{{ signingDevDetails }}</pre>
+      </details>
+    </section>
+
+    <section>
+      <h2>Digital Products Backend</h2>
+      <p>Development only. Verifies Supabase tables, buckets, and server env configuration.</p>
+
+      <button
+        type="button"
+        :disabled="supabaseState === 'running'"
+        @click="checkSupabaseSetup"
+      >
+        {{ supabaseState === 'running' ? 'Checking…' : 'Check Supabase Setup' }}
+      </button>
+
+      <div v-if="supabaseState === 'success'" class="sign-result sign-result--ok">
+        <p><strong>Supabase backend ready</strong></p>
+      </div>
+
+      <div v-else-if="supabaseState === 'failure'" class="sign-result sign-result--fail">
+        <p><strong>Supabase setup incomplete</strong></p>
+        <p>{{ supabaseError }}</p>
+      </div>
+
+      <details v-if="supabaseHealth" class="dev-details">
+        <summary>Health details</summary>
+        <pre>{{ JSON.stringify(supabaseHealth, null, 2) }}</pre>
       </details>
     </section>
 
