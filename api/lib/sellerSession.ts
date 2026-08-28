@@ -3,7 +3,7 @@ import {
   SELLER_SESSION_TTL_SECONDS,
   SELLER_UPLOAD_ACTION,
   SESSION_COOKIE_NAME,
-} from './crowdDropConstants.ts'
+} from './crowdDropConstants.js'
 
 export const CROWDDROP_AUTH_SECRET_ENV = 'CROWDDROP_AUTH_SECRET'
 

@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http'
+import type { IncomingHttpHeaders } from 'node:http'
 import Busboy from 'busboy'
-import { ASSET_MAX_BYTES } from './crowdDropConstants.ts'
+import { ASSET_MAX_BYTES } from './crowdDropConstants.js'
 
 export type ParsedFile = {
   buffer: Buffer
@@ -39,7 +40,7 @@ export function parseMultipart(req: IncomingMessage): Promise<ParsedMultipart> {
     const pending: Promise<void>[] = []
 
     const busboy = Busboy({
-      headers: req.headers as Busboy.BusboyHeaders,
+      headers: req.headers as IncomingHttpHeaders,
       limits: {
         files: 2,
         fileSize: ASSET_MAX_BYTES,

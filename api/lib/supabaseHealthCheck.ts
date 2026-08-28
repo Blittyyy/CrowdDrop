@@ -2,6 +2,7 @@
  * Serverless-safe Supabase health check.
  * No top-level @supabase/supabase-js import — loaded dynamically at runtime.
  */
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 const PRODUCT_COVER_BUCKET = 'product-covers'
 const PRODUCT_ASSET_BUCKET = 'product-assets'
@@ -20,15 +21,6 @@ export type SupabaseHealthResult = {
   missing?: string[]
 }
 
-type SupabaseClientLike = {
-  from: (table: string) => {
-    select: (columns: string) => { limit: (n: number) => Promise<{ error: { message: string } | null }> }
-  }
-  storage: {
-    listBuckets: () => Promise<{ data: Array<{ id?: string, name: string, public?: boolean }> | null, error: { message: string } | null }>
-  }
-}
-
 export async function runSupabaseHealthCheck(): Promise<SupabaseHealthResult> {
   const result: SupabaseHealthResult = {
     ok: false,
@@ -43,7 +35,7 @@ export async function runSupabaseHealthCheck(): Promise<SupabaseHealthResult> {
 
   const { readSupabaseEnv } = await import('./supabaseEnv.js')
   const env = readSupabaseEnv()
-  if (!env.ok) {
+  if (env.ok === false) {
     return {
       ...result,
       error: env.error,
@@ -53,7 +45,7 @@ export async function runSupabaseHealthCheck(): Promise<SupabaseHealthResult> {
   }
 
   result.stage = 'client'
-  let client: SupabaseClientLike
+  let client: SupabaseClient
   try {
     const { createClient } = await import('@supabase/supabase-js')
     client = createClient(env.url, env.serviceRoleKey, {
@@ -61,7 +53,7 @@ export async function runSupabaseHealthCheck(): Promise<SupabaseHealthResult> {
         persistSession: false,
         autoRefreshToken: false,
       },
-    }) as SupabaseClientLike
+    })
   }
   catch (error) {
     console.error('[supabase-health] client init', error)

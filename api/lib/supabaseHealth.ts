@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   PRODUCT_ASSET_BUCKET,
   PRODUCT_COVER_BUCKET,
-} from './productFoundation'
+} from './productFoundation.js'
 
 export type SupabaseHealthResult = {
   ok: boolean

@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { sha256Hex } from './authChallengeStore.ts'
+import { sha256Hex } from './authChallengeStore.js'
 import {
   PRODUCT_ASSET_BUCKET,
   PRODUCT_COVER_BUCKET,
-} from './crowdDropConstants.ts'
-import type { ParsedFile } from './httpBody.ts'
+} from './crowdDropConstants.js'
+import type { ParsedFile } from './httpBody.js'
 import {
   buildStoragePath,
   storageExtension,
@@ -12,7 +12,7 @@ import {
   validateCoverFile,
   validateDescription,
   validateTitle,
-} from './productDraftValidation.ts'
+} from './productDraftValidation.js'
 
 export type DraftUploadInput = {
   sellerWallet: string

@@ -1,11 +1,12 @@
 import { createHash, randomBytes } from 'node:crypto'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   AUTH_CHALLENGE_TTL_SECONDS,
   POLYGON_CHAIN_ID,
   POLYGON_CROWDDROP_ADDRESS,
   SELLER_UPLOAD_ACTION,
-} from './crowdDropConstants.ts'
-import { normalizeWallet } from './productFoundation.ts'
+} from './crowdDropConstants.js'
+import { normalizeWallet } from './productFoundation.js'
 
 export type StoredAuthChallenge = {
   nonce: string
@@ -37,11 +38,7 @@ export function challengePolicyFields(): {
 }
 
 export async function insertAuthChallenge(
-  client: {
-    from: (table: string) => {
-      insert: (row: unknown) => PromiseLike<{ error: { message: string } | null }>
-    }
-  },
+  client: SupabaseClient,
   params: { wallet: string, nonce: string, expiresAtSeconds: number },
 ): Promise<{ ok: true } | { ok: false, reason: string }> {
   const wallet = normalizeWallet(params.wallet)
@@ -63,19 +60,7 @@ export async function insertAuthChallenge(
 }
 
 export async function consumeAuthChallenge(
-  client: {
-    from: (table: string) => {
-      update: (row: unknown) => {
-        eq: (col: string, val: string) => {
-          is: (col: string, val: null) => {
-            select: (cols: string) => {
-              maybeSingle: () => Promise<{ data: { wallet: string, action: string, chain_id: number, contract_address: string, expires_at: string } | null, error: { message: string } | null }>
-            }
-          }
-        }
-      }
-    }
-  },
+  client: SupabaseClient,
   params: {
     nonce: string
     wallet: string

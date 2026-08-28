@@ -17,7 +17,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     const { SESSION_COOKIE_NAME } = await import('../lib/crowdDropConstants.js')
     const { verifySellerSessionToken } = await import('../lib/sellerSession.js')
     const session = verifySellerSessionToken(cookies[SESSION_COOKIE_NAME])
-    if (!session.ok) {
+    if (session.ok === false) {
       res.statusCode = 401
       res.end(JSON.stringify({ ok: false, reason: 'Seller authentication required.' }))
       return
@@ -62,7 +62,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       asset,
     })
 
-    if (!result.ok) {
+    if (result.ok === false) {
       res.statusCode = result.status ?? 400
       res.end(JSON.stringify({ ok: false, reason: result.reason }))
       return

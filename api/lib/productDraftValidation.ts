@@ -4,7 +4,7 @@ import {
   COVER_MAX_BYTES,
   DESCRIPTION_MAX_LENGTH,
   TITLE_MAX_LENGTH,
-} from './crowdDropConstants.ts'
+} from './crowdDropConstants.js'
 
 export type ValidationResult =
   | { ok: true }
