@@ -54,7 +54,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
 
   try {
     const env = readEnv()
-    if (!env.ok) {
+    if (env.ok === false) {
       res.statusCode = 503
       res.end(JSON.stringify({ ...result, ...env }))
       return

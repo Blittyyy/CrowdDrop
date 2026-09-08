@@ -70,7 +70,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       nonce,
       expiresAtSeconds: expiresAt,
     })
-    if (!stored.ok) {
+    if (stored.ok === false) {
       res.statusCode = 500
       res.end(JSON.stringify({ ok: false, reason: 'Could not store auth challenge.' }))
       return

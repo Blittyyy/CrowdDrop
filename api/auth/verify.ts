@@ -53,7 +53,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       signatureRaw as Hex,
       { expectedAction: SELLER_UPLOAD_ACTION },
     )
-    if (!verified.ok) {
+    if (verified.ok === false) {
       res.statusCode = 400
       res.end(JSON.stringify({ ok: false, reason: verified.reason }))
       return
@@ -77,14 +77,14 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       wallet: typedData.message.wallet,
       action: SELLER_UPLOAD_ACTION,
     })
-    if (!consumed.ok) {
+    if (consumed.ok === false) {
       res.statusCode = 400
       res.end(JSON.stringify({ ok: false, reason: consumed.reason }))
       return
     }
 
     const session = createSellerSessionToken(typedData.message.wallet)
-    if (!session.ok) {
+    if (session.ok === false) {
       res.statusCode = 503
       res.end(JSON.stringify({ ok: false, reason: session.reason }))
       return

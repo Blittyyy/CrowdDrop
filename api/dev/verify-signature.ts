@@ -76,7 +76,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       { expectedAction: AUTH_TEST_ACTION },
     )
 
-    if (!result.ok) {
+    if (result.ok === false) {
       res.statusCode = 400
       res.end(JSON.stringify({ ok: false, reason: result.reason }))
       return

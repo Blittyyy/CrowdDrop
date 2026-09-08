@@ -43,19 +43,19 @@ export async function createProductDraft(
   input: DraftUploadInput,
 ): Promise<DraftUploadResult> {
   const titleCheck = validateTitle(input.title)
-  if (!titleCheck.ok)
+  if (titleCheck.ok === false)
     return { ok: false, reason: titleCheck.reason, status: 400 }
 
   const descriptionCheck = validateDescription(input.description)
-  if (!descriptionCheck.ok)
+  if (descriptionCheck.ok === false)
     return { ok: false, reason: descriptionCheck.reason, status: 400 }
 
   const coverCheck = validateCoverFile(input.cover.buffer, input.cover.filename, input.cover.mimeType)
-  if (!coverCheck.ok)
+  if (coverCheck.ok === false)
     return { ok: false, reason: coverCheck.reason, status: 400 }
 
   const assetCheck = validateAssetFile(input.asset.buffer, input.asset.filename, input.asset.mimeType)
-  if (!assetCheck.ok)
+  if (assetCheck.ok === false)
     return { ok: false, reason: assetCheck.reason, status: 400 }
 
   const sellerWallet = input.sellerWallet.toLowerCase()
