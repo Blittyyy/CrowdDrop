@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { init } from '@nimiq/mini-app-sdk'
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import EscrowTest from './EscrowTest.vue'
 import TokenEscrowTest from './TokenEscrowTest.vue'
 import {
@@ -43,7 +43,7 @@ const supabaseError = ref<string | null>(null)
 const supabaseHealth = ref<Record<string, unknown> | null>(null)
 
 type SellerAuthState = 'idle' | 'running' | 'authenticated' | 'failure' | 'cancelled'
-type DraftUploadState = 'idle' | 'running' | 'success' | 'failure'
+type DraftUploadState = 'idle' | 'preparing' | 'uploading_cover' | 'uploading_asset' | 'finalizing' | 'success' | 'failure'
 
 const sellerAuthState = ref<SellerAuthState>('idle')
 const sellerAuthError = ref<string | null>(null)
@@ -57,6 +57,33 @@ const draftAsset = ref<File | null>(null)
 const draftUploadState = ref<DraftUploadState>('idle')
 const draftUploadError = ref<string | null>(null)
 const draftResult = ref<Record<string, unknown> | null>(null)
+const draftUploadStageLabel = ref('')
+
+const draftUploadBusy = computed(() =>
+  draftUploadState.value === 'preparing'
+  || draftUploadState.value === 'uploading_cover'
+  || draftUploadState.value === 'uploading_asset'
+  || draftUploadState.value === 'finalizing',
+)
+
+async function sha256HexOfFile(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function putToSignedUploadUrl(signedUrl: string, file: File, contentType: string): Promise<void> {
+  const response = await fetch(signedUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': contentType || file.type || 'application/octet-stream',
+    },
+    body: file,
+  })
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(detail || `Direct upload failed (${response.status}).`)
+  }
+}
 
 onMounted(async () => {
   ethereumAvailable.value = Boolean(window.ethereum)
@@ -382,11 +409,11 @@ function resetDraftUpload() {
   draftUploadState.value = 'idle'
   draftUploadError.value = null
   draftResult.value = null
+  draftUploadStageLabel.value = ''
 }
 
 async function uploadDraftProduct() {
   resetDraftUpload()
-  draftUploadState.value = 'running'
 
   if (sellerAuthState.value !== 'authenticated' || !sellerSessionWallet.value) {
     draftUploadState.value = 'failure'
@@ -406,29 +433,86 @@ async function uploadDraftProduct() {
     return
   }
 
-  try {
-    const form = new FormData()
-    form.append('title', draftTitle.value.trim())
-    form.append('description', draftDescription.value.trim())
-    form.append('cover', draftCover.value)
-    form.append('asset', draftAsset.value)
+  const cover = draftCover.value
+  const asset = draftAsset.value
 
-    const response = await fetch('/api/products/draft', {
+  try {
+    draftUploadState.value = 'preparing'
+    draftUploadStageLabel.value = 'Preparing upload…'
+
+    const assetSha256 = await sha256HexOfFile(asset)
+
+    const intentResponse = await fetch('/api/products/upload-intent', {
       method: 'POST',
       credentials: 'include',
-      body: form,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: draftTitle.value.trim(),
+        description: draftDescription.value.trim(),
+        cover: {
+          name: cover.name,
+          size: cover.size,
+          type: cover.type,
+        },
+        asset: {
+          name: asset.name,
+          size: asset.size,
+          type: asset.type,
+        },
+        assetSha256,
+      }),
     })
-    const payload = await response.json() as Record<string, unknown>
+    const intent = await intentResponse.json() as {
+      ok?: boolean
+      reason?: string
+      code?: string
+      uploadIntentId?: string
+      cover?: { signedUrl: string, contentType: string }
+      asset?: { signedUrl: string, contentType: string }
+    }
 
-    if (!response.ok || payload.ok !== true) {
+    if (!intentResponse.ok || intent.ok !== true || !intent.uploadIntentId || !intent.cover || !intent.asset) {
+      draftUploadState.value = 'failure'
+      if (intent.code === 'too_many_active_uploads') {
+        draftUploadError.value = 'You have too many unfinished uploads. Finish or wait for them to expire before starting another.'
+      }
+      else if (intent.code === 'upload_rate_limited') {
+        draftUploadError.value = 'Too many upload attempts. Try again later.'
+      }
+      else {
+        draftUploadError.value = intent.reason ?? 'Could not prepare upload.'
+      }
+      return
+    }
+
+    draftUploadState.value = 'uploading_cover'
+    draftUploadStageLabel.value = 'Uploading cover…'
+    await putToSignedUploadUrl(intent.cover.signedUrl, cover, intent.cover.contentType)
+
+    draftUploadState.value = 'uploading_asset'
+    draftUploadStageLabel.value = 'Uploading product…'
+    await putToSignedUploadUrl(intent.asset.signedUrl, asset, intent.asset.contentType)
+
+    draftUploadState.value = 'finalizing'
+    draftUploadStageLabel.value = 'Finalizing draft…'
+    const completeResponse = await fetch('/api/products/complete-upload', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ uploadIntentId: intent.uploadIntentId }),
+    })
+    const payload = await completeResponse.json() as Record<string, unknown>
+
+    if (!completeResponse.ok || payload.ok !== true) {
       draftUploadState.value = 'failure'
       draftUploadError.value = typeof payload.reason === 'string'
         ? payload.reason
-        : 'Product draft upload failed.'
+        : 'Product draft finalization failed.'
       return
     }
 
     draftUploadState.value = 'success'
+    draftUploadStageLabel.value = 'Product draft created'
     draftResult.value = payload
   }
   catch (error) {
@@ -575,27 +659,32 @@ async function uploadDraftProduct() {
         </label>
         <label>
           Cover image
+          <span class="field-hint">Maximum 2 MB (PNG / JPEG / WebP)</span>
           <input type="file" accept="image/png,image/jpeg,image/webp" :disabled="sellerAuthState !== 'authenticated'" @change="onDraftCoverChange">
         </label>
         <label>
           Digital file
+          <span class="field-hint">Maximum 25 MB</span>
           <input type="file" :disabled="sellerAuthState !== 'authenticated'" @change="onDraftAssetChange">
         </label>
       </div>
 
       <button
         type="button"
-        :disabled="draftUploadState === 'running' || sellerAuthState !== 'authenticated'"
+        :disabled="draftUploadBusy || sellerAuthState !== 'authenticated'"
         @click="uploadDraftProduct"
       >
-        {{ draftUploadState === 'running' ? 'Uploading…' : 'Upload Draft Product' }}
+        {{ draftUploadBusy ? (draftUploadStageLabel || 'Uploading…') : 'Upload Draft Product' }}
       </button>
+
+      <p v-if="draftUploadBusy" class="draft-stage">{{ draftUploadStageLabel }}</p>
 
       <div v-if="draftUploadState === 'success'" class="sign-result sign-result--ok">
         <p><strong>Product draft created</strong></p>
         <p>Draft ID: {{ draftResult?.draftId }}</p>
         <p>File type: {{ draftResult?.fileTypeLabel }}</p>
         <p>Size: {{ draftResult?.assetSizeBytes }} bytes</p>
+        <p>Direct upload: Yes</p>
         <p>Private asset stored: Yes</p>
       </div>
 
@@ -672,6 +761,16 @@ h2 {
   display: grid;
   gap: 0.35rem;
   font-size: 0.95rem;
+}
+
+.field-hint {
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.draft-stage {
+  margin-top: 0.75rem;
+  color: #444;
 }
 
 .draft-form input[type='text'],

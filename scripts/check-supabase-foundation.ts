@@ -102,6 +102,18 @@ assert.match(migration, /product-covers/)
 assert.match(migration, /product-assets/)
 assert.match(migration, /ENABLE ROW LEVEL SECURITY/)
 
+const migration2 = readFileSync(
+  join(repoRoot, 'supabase/migrations/002_product_upload_intents.sql'),
+  'utf8',
+)
+assert.match(migration2, /CREATE TABLE IF NOT EXISTS product_upload_intents/)
+assert.match(migration2, /ENABLE ROW LEVEL SECURITY/)
+assert.match(migration2, /asset_expected_sha256/)
+assert.match(migration2, /ip_hash/)
+assert.match(migration2, /cleaned_at/)
+assert.match(migration2, /26214400/)
+assert.match(migration2, /2097152/)
+
 assert.equal(PRODUCT_COVER_BUCKET, 'product-covers')
 assert.equal(PRODUCT_ASSET_BUCKET, 'product-assets')
 
@@ -115,10 +127,11 @@ if (existsSync(distAssets)) {
       assert.equal(bundle.includes(forbidden), false, `dist bundle must not contain ${forbidden}`)
     }
     assert.equal(bundle.includes('service_role'), false, 'dist bundle must not contain service_role')
+    assert.equal(bundle.includes('@supabase/supabase-js'), false, 'dist bundle must not include supabase-js')
   }
 }
 
-console.log('supabase-foundation: 32 checks passed')
+console.log('supabase-foundation: 40 checks passed')
 
 function walkFiles(dir: string): string[] {
   const out: string[] = []

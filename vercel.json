@@ -1,5 +1,11 @@
 {
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/products/cleanup-expired-uploads",
+      "schedule": "0 3 * * *"
+    }
   ]
 }

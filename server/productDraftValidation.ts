@@ -101,7 +101,7 @@ export function validateCoverFile(buffer: Buffer, filename: string, declaredMime
   if (buffer.length === 0)
     return { ok: false, reason: 'Cover image is required.' }
   if (buffer.length > COVER_MAX_BYTES)
-    return { ok: false, reason: 'Cover image must be at most 2 MB.' }
+    return { ok: false, reason: `Cover image must be at most ${COVER_MAX_BYTES / (1024 * 1024)} MB.` }
 
   const sniffed = sniffMime(buffer, filename)
   if (!sniffed || !COVER_ALLOWED.has(sniffed))
@@ -122,7 +122,7 @@ export function validateAssetFile(buffer: Buffer, filename: string, declaredMime
   if (buffer.length === 0)
     return { ok: false, reason: 'Digital file is required.' }
   if (buffer.length > ASSET_MAX_BYTES)
-    return { ok: false, reason: 'Digital file must be at most 50 MB.' }
+    return { ok: false, reason: `Digital file must be at most ${ASSET_MAX_BYTES / (1024 * 1024)} MB.` }
 
   const lower = filename.toLowerCase()
   for (const ext of ['.exe', '.bat', '.cmd', '.sh', '.msi', '.apk', '.dmg', '.js', '.html', '.htm', '.wasm']) {
@@ -142,6 +142,129 @@ export function validateAssetFile(buffer: Buffer, filename: string, declaredMime
   }
 
   return { ok: true, mime: sniffed, label: fileTypeLabel(sniffed, filename) }
+}
+
+export function validateCoverMetadata(
+  filename: string,
+  size: number,
+  declaredMime: string,
+): ValidationResult & { mime?: string } {
+  if (!filename.trim())
+    return { ok: false, reason: 'Cover image is required.' }
+  if (!Number.isFinite(size) || size <= 0)
+    return { ok: false, reason: 'Cover image is required.' }
+  if (size > COVER_MAX_BYTES)
+    return { ok: false, reason: `Cover image must be at most ${COVER_MAX_BYTES / (1024 * 1024)} MB.` }
+
+  const mime = resolveDeclaredMime(filename, declaredMime)
+  if (!mime || !COVER_ALLOWED.has(mime))
+    return { ok: false, reason: 'Cover must be PNG, JPEG, or WebP.' }
+
+  for (const blocked of BLOCKED_MIME_PREFIXES) {
+    if (declaredMime?.toLowerCase().startsWith(blocked))
+      return { ok: false, reason: 'Cover file type not allowed.' }
+  }
+
+  return { ok: true, mime }
+}
+
+export function validateAssetMetadata(
+  filename: string,
+  size: number,
+  declaredMime: string,
+): ValidationResult & { mime?: string, label?: string } {
+  if (!filename.trim())
+    return { ok: false, reason: 'Digital file is required.' }
+  if (!Number.isFinite(size) || size <= 0)
+    return { ok: false, reason: 'Digital file is required.' }
+  if (size > ASSET_MAX_BYTES)
+    return { ok: false, reason: `Digital file must be at most ${ASSET_MAX_BYTES / (1024 * 1024)} MB.` }
+
+  const lower = filename.toLowerCase()
+  for (const ext of ['.exe', '.bat', '.cmd', '.sh', '.msi', '.apk', '.dmg', '.js', '.html', '.htm', '.wasm']) {
+    if (lower.endsWith(ext))
+      return { ok: false, reason: 'File type not allowed.' }
+  }
+
+  for (const blocked of BLOCKED_MIME_PREFIXES) {
+    if (declaredMime?.toLowerCase().startsWith(blocked))
+      return { ok: false, reason: 'Digital file type not allowed.' }
+  }
+
+  const mime = resolveDeclaredMime(filename, declaredMime)
+  if (!mime || !ASSET_ALLOWED.has(mime))
+    return { ok: false, reason: 'Digital file type not allowed for V1.' }
+
+  return { ok: true, mime, label: fileTypeLabel(mime, filename) }
+}
+
+export function validateAssetSha256(value: unknown): ValidationResult & { sha256?: string } {
+  if (typeof value !== 'string')
+    return { ok: false, reason: 'Asset SHA-256 is required.' }
+  const sha256 = value.trim().toLowerCase()
+  if (!/^[a-f0-9]{64}$/.test(sha256))
+    return { ok: false, reason: 'Asset SHA-256 must be a 64-character hex digest.' }
+  return { ok: true, sha256 }
+}
+
+function resolveDeclaredMime(filename: string, declaredMime: string): string | null {
+  const normalizedDeclared = declaredMime.trim().toLowerCase()
+  const lower = filename.toLowerCase()
+
+  if (COVER_ALLOWED.has(normalizedDeclared) || ASSET_ALLOWED.has(normalizedDeclared)) {
+    if (normalizedDeclared === 'image/png' && !lower.endsWith('.png'))
+      return null
+    if (normalizedDeclared === 'image/jpeg' && !(lower.endsWith('.jpg') || lower.endsWith('.jpeg')))
+      return null
+    if (normalizedDeclared === 'image/webp' && !lower.endsWith('.webp'))
+      return null
+    if (normalizedDeclared === 'application/pdf' && !lower.endsWith('.pdf'))
+      return null
+    if (normalizedDeclared === 'text/csv' && !lower.endsWith('.csv'))
+      return null
+    if (normalizedDeclared === 'text/markdown' && !lower.endsWith('.md'))
+      return null
+    if (normalizedDeclared === 'text/plain' && !lower.endsWith('.txt'))
+      return null
+    if (normalizedDeclared === 'application/zip' && !lower.endsWith('.zip'))
+      return null
+    if (
+      normalizedDeclared === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      && !lower.endsWith('.docx')
+    ) {
+      return null
+    }
+    if (
+      normalizedDeclared === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      && !lower.endsWith('.xlsx')
+    ) {
+      return null
+    }
+    return normalizedDeclared
+  }
+
+  // Browsers often send empty or generic MIME; fall back to extension allowlist.
+  if (lower.endsWith('.png'))
+    return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg'))
+    return 'image/jpeg'
+  if (lower.endsWith('.webp'))
+    return 'image/webp'
+  if (lower.endsWith('.pdf'))
+    return 'application/pdf'
+  if (lower.endsWith('.zip'))
+    return 'application/zip'
+  if (lower.endsWith('.docx'))
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  if (lower.endsWith('.xlsx'))
+    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  if (lower.endsWith('.csv'))
+    return 'text/csv'
+  if (lower.endsWith('.md'))
+    return 'text/markdown'
+  if (lower.endsWith('.txt'))
+    return 'text/plain'
+  return null
 }
 
 export function fileTypeLabel(mime: string, filename: string): string {

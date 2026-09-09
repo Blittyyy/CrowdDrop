@@ -1,7 +1,21 @@
+/**
+ * LEGACY multipart draft upload (bytes through Vercel).
+ * Disabled in production so it cannot bypass direct-upload quotas (25 MB, active intents, rate limits).
+ * Enable only with ALLOW_LEGACY_PRODUCT_DRAFT=1 for local emergency testing.
+ */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { parseCookies, parseMultipart } from '../../server/httpBody.js'
 
 type ApiRequest = IncomingMessage & { method?: string, body?: unknown }
+
+function legacyDraftAllowed(): boolean {
+  if (process.env.ALLOW_LEGACY_PRODUCT_DRAFT === '1')
+    return true
+  // Never available on Vercel production.
+  if (process.env.VERCEL_ENV === 'production')
+    return false
+  return process.env.NODE_ENV !== 'production'
+}
 
 export default async function handler(req: ApiRequest, res: ServerResponse) {
   res.setHeader('Content-Type', 'application/json')
@@ -12,9 +26,19 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     return
   }
 
+  if (!legacyDraftAllowed()) {
+    res.statusCode = 410
+    res.end(JSON.stringify({
+      ok: false,
+      code: 'legacy_draft_disabled',
+      reason: 'Multipart draft upload is disabled. Use direct upload intent flow.',
+    }))
+    return
+  }
+
   try {
     const cookies = parseCookies(req.headers.cookie)
-    const { SESSION_COOKIE_NAME } = await import('../../server/crowdDropConstants.js')
+    const { SESSION_COOKIE_NAME, MAX_ASSET_BYTES, MAX_COVER_BYTES } = await import('../../server/crowdDropConstants.js')
     const { verifySellerSessionToken } = await import('../../server/sellerSession.js')
     const session = verifySellerSessionToken(cookies[SESSION_COOKIE_NAME])
     if (session.ok === false) {
@@ -37,6 +61,12 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     if (!cover || !asset) {
       res.statusCode = 400
       res.end(JSON.stringify({ ok: false, reason: 'Cover and asset files are required.' }))
+      return
+    }
+
+    if (cover.buffer.length > MAX_COVER_BYTES || asset.buffer.length > MAX_ASSET_BYTES) {
+      res.statusCode = 400
+      res.end(JSON.stringify({ ok: false, reason: 'File exceeds V1 size limit.' }))
       return
     }
 
@@ -76,6 +106,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       assetSizeBytes: result.assetSizeBytes,
       assetSha256: result.assetSha256,
       privateAssetStored: true,
+      legacy: true,
     }))
   }
   catch (error) {
