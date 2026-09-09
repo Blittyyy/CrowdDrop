@@ -7,8 +7,8 @@ import {
   challengeExpiresAtSeconds,
   createChallengeNonce,
   sha256Hex,
-} from '../api/lib/authChallengeStore.ts'
-import { SELLER_UPLOAD_ACTION } from '../api/lib/crowdDropConstants.ts'
+} from '../server/authChallengeStore.ts'
+import { SELLER_UPLOAD_ACTION } from '../server/crowdDropConstants.ts'
 import {
   buildStoragePath,
   sniffMime,
@@ -16,13 +16,13 @@ import {
   validateCoverFile,
   validateDescription,
   validateTitle,
-} from '../api/lib/productDraftValidation.ts'
-import { normalizeWallet } from '../api/lib/productFoundation.ts'
+} from '../server/productDraftValidation.ts'
+import { normalizeWallet } from '../server/productFoundation.ts'
 import {
   createSellerSessionToken,
   signSellerSession,
   verifySellerSessionToken,
-} from '../api/lib/sellerSession.ts'
+} from '../server/sellerSession.ts'
 
 const TEST_SECRET = 'test-secret-for-seller-session-only'
 process.env.CROWDDROP_AUTH_SECRET = TEST_SECRET
@@ -136,7 +136,7 @@ const mockClient = {
   },
 }
 
-const { consumeAuthChallenge } = await import('../api/lib/authChallengeStore.ts')
+const { consumeAuthChallenge } = await import('../server/authChallengeStore.ts')
 const first = await consumeAuthChallenge(mockClient, {
   nonce: randomBytes(16).toString('hex'),
   wallet,

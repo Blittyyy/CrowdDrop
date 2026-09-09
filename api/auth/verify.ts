@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Hex } from 'viem'
-import { readJsonBody } from '../lib/httpBody.js'
+import { readJsonBody } from '../../server/httpBody.js'
 
 type ApiRequest = IncomingMessage & { method?: string, body?: unknown }
 
@@ -30,10 +30,10 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       return
     }
 
-    const { SELLER_UPLOAD_ACTION } = await import('../lib/crowdDropConstants.js')
-    const { parseProviderTypedData, verifyCrowdDropAuthSignature } = await import('../lib/crowdDropAuthVerify.js')
-    const { consumeAuthChallenge } = await import('../lib/authChallengeStore.js')
-    const { createSellerSessionToken, buildSessionCookie } = await import('../lib/sellerSession.js')
+    const { SELLER_UPLOAD_ACTION } = await import('../../server/crowdDropConstants.js')
+    const { parseProviderTypedData, verifyCrowdDropAuthSignature } = await import('../../server/crowdDropAuthVerify.js')
+    const { consumeAuthChallenge } = await import('../../server/authChallengeStore.js')
+    const { createSellerSessionToken, buildSessionCookie } = await import('../../server/sellerSession.js')
 
     let typedData
     try {

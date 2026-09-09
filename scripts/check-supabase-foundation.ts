@@ -14,13 +14,13 @@ import {
   normalizeWallet,
   PRODUCT_ASSET_BUCKET,
   PRODUCT_COVER_BUCKET,
-} from '../api/lib/productFoundation.ts'
+} from '../server/productFoundation.ts'
 import {
   FORBIDDEN_CLIENT_ENV_KEYS,
   readSupabaseEnv,
   SUPABASE_SERVICE_ROLE_KEY_ENV,
   SUPABASE_URL_ENV,
-} from '../api/lib/supabaseEnv.ts'
+} from '../server/supabaseEnv.ts'
 
 const TEST_WALLET = '0x1234567890123456789012345678901234567890'
 assert.equal(normalizeWallet(TEST_WALLET), TEST_WALLET)
@@ -87,6 +87,7 @@ for (const file of srcFiles) {
     assert.equal(text.includes(forbidden), false, `${file} must not reference ${forbidden}`)
   }
   assert.equal(text.includes('@supabase/supabase-js'), false, `${file} must not import Supabase client`)
+  assert.equal(text.includes('server/supabase'), false, `${file} must not import server Supabase utilities`)
   assert.equal(text.includes('api/lib/supabase'), false, `${file} must not import server Supabase utilities`)
 }
 

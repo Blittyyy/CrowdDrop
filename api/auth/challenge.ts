@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readJsonBody } from '../lib/httpBody.js'
+import { readJsonBody } from '../../server/httpBody.js'
 
 type ApiRequest = IncomingMessage & { method?: string, body?: unknown }
 
@@ -28,9 +28,9 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       challengePolicyFields,
       createChallengeNonce,
       insertAuthChallenge,
-    } = await import('../lib/authChallengeStore.js')
-    const { SELLER_UPLOAD_ACTION } = await import('../lib/crowdDropConstants.js')
-    const { normalizeWallet, isValidAuthChallengeAction } = await import('../lib/productFoundation.js')
+    } = await import('../../server/authChallengeStore.js')
+    const { SELLER_UPLOAD_ACTION } = await import('../../server/crowdDropConstants.js')
+    const { normalizeWallet, isValidAuthChallengeAction } = await import('../../server/productFoundation.js')
 
     if (action !== SELLER_UPLOAD_ACTION || !isValidAuthChallengeAction(action)) {
       res.statusCode = 400

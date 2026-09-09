@@ -8,7 +8,7 @@ import {
   AUTH_TEST_ACTION,
   parseProviderTypedData,
   verifyCrowdDropAuthSignature,
-} from '../api/lib/crowdDropAuthVerify.ts'
+} from '../server/crowdDropAuthVerify.ts'
 
 const CHALLENGE_TTL_SECONDS = 5 * 60
 

@@ -39,7 +39,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       AUTH_TEST_ACTION,
       parseProviderTypedData,
       verifyCrowdDropAuthSignature,
-    } = await import('../lib/crowdDropAuthVerify.js')
+    } = await import('../../server/crowdDropAuthVerify.js')
 
     const body = await readJsonBody(req)
     if (!body || typeof body !== 'object') {

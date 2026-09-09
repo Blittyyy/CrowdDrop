@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { parseCookies, parseMultipart } from '../lib/httpBody.js'
+import { parseCookies, parseMultipart } from '../../server/httpBody.js'
 
 type ApiRequest = IncomingMessage & { method?: string, body?: unknown }
 
@@ -14,8 +14,8 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
 
   try {
     const cookies = parseCookies(req.headers.cookie)
-    const { SESSION_COOKIE_NAME } = await import('../lib/crowdDropConstants.js')
-    const { verifySellerSessionToken } = await import('../lib/sellerSession.js')
+    const { SESSION_COOKIE_NAME } = await import('../../server/crowdDropConstants.js')
+    const { verifySellerSessionToken } = await import('../../server/sellerSession.js')
     const session = verifySellerSessionToken(cookies[SESSION_COOKIE_NAME])
     if (session.ok === false) {
       res.statusCode = 401
@@ -49,7 +49,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     }
 
     const { createClient } = await import('@supabase/supabase-js')
-    const { createProductDraft } = await import('../lib/productDraftUpload.js')
+    const { createProductDraft } = await import('../../server/productDraftUpload.js')
     const client = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
