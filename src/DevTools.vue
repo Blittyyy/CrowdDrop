@@ -59,6 +59,13 @@ const draftUploadError = ref<string | null>(null)
 const draftResult = ref<Record<string, unknown> | null>(null)
 const draftUploadStageLabel = ref('')
 
+type FinalizeUiState = 'idle' | 'running' | 'success' | 'failure'
+const finalizeDraftId = ref('')
+const finalizeTxHash = ref('')
+const finalizeState = ref<FinalizeUiState>('idle')
+const finalizeError = ref<string | null>(null)
+const finalizeResult = ref<Record<string, unknown> | null>(null)
+
 const draftUploadBusy = computed(() =>
   draftUploadState.value === 'preparing'
   || draftUploadState.value === 'uploading_cover'
@@ -514,10 +521,57 @@ async function uploadDraftProduct() {
     draftUploadState.value = 'success'
     draftUploadStageLabel.value = 'Product draft created'
     draftResult.value = payload
+    if (typeof payload.draftId === 'string')
+      finalizeDraftId.value = payload.draftId
   }
   catch (error) {
     draftUploadState.value = 'failure'
     draftUploadError.value = formatWalletError(error)
+  }
+}
+
+async function finalizeProduct() {
+  finalizeState.value = 'running'
+  finalizeError.value = null
+  finalizeResult.value = null
+
+  if (sellerAuthState.value !== 'authenticated') {
+    finalizeState.value = 'failure'
+    finalizeError.value = 'Authenticate as seller first.'
+    return
+  }
+
+  if (!finalizeDraftId.value.trim() || !finalizeTxHash.value.trim()) {
+    finalizeState.value = 'failure'
+    finalizeError.value = 'Draft ID and create transaction hash are required.'
+    return
+  }
+
+  try {
+    const response = await fetch('/api/products/finalize', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        draftId: finalizeDraftId.value.trim(),
+        createTxHash: finalizeTxHash.value.trim(),
+      }),
+    })
+    const payload = await response.json() as Record<string, unknown>
+    if (!response.ok || payload.ok !== true) {
+      finalizeState.value = 'failure'
+      finalizeError.value = typeof payload.reason === 'string'
+        ? payload.reason
+        : 'Product finalization failed.'
+      return
+    }
+
+    finalizeState.value = 'success'
+    finalizeResult.value = payload
+  }
+  catch (error) {
+    finalizeState.value = 'failure'
+    finalizeError.value = formatWalletError(error)
   }
 }
 </script>
@@ -690,6 +744,43 @@ async function uploadDraftProduct() {
 
       <div v-else-if="draftUploadState === 'failure'" class="sign-result sign-result--fail">
         <p>{{ draftUploadError }}</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Product Finalization Test</h2>
+      <p>Development only. Bind an existing draft to a confirmed Polygon createDrop transaction. Does not send any chain transactions.</p>
+      <p>Seller: {{ sellerAuthState === 'authenticated' ? sellerSessionWallet : 'not authenticated' }}</p>
+
+      <div class="draft-form">
+        <label>
+          Draft ID
+          <input v-model="finalizeDraftId" type="text" :disabled="sellerAuthState !== 'authenticated'">
+        </label>
+        <label>
+          Create transaction hash
+          <input v-model="finalizeTxHash" type="text" placeholder="0x…" :disabled="sellerAuthState !== 'authenticated'">
+        </label>
+      </div>
+
+      <button
+        type="button"
+        :disabled="finalizeState === 'running' || sellerAuthState !== 'authenticated'"
+        @click="finalizeProduct"
+      >
+        {{ finalizeState === 'running' ? 'Finalizing…' : 'Finalize Product' }}
+      </button>
+
+      <div v-if="finalizeState === 'success'" class="sign-result sign-result--ok">
+        <p><strong>Product locked</strong></p>
+        <p>Drop #{{ finalizeResult?.dropId }}</p>
+        <p>Seller verified: Yes</p>
+        <p>Immutable: Yes</p>
+        <p v-if="finalizeResult?.idempotent">Idempotent retry: Yes</p>
+      </div>
+
+      <div v-else-if="finalizeState === 'failure'" class="sign-result sign-result--fail">
+        <p>{{ finalizeError }}</p>
       </div>
     </section>
 

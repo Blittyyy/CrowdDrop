@@ -22,6 +22,7 @@
     "test:supabase": "node --experimental-strip-types scripts/check-supabase-foundation.ts",
     "test:seller-draft": "node --experimental-strip-types --import ./scripts/register-api-import-hook.mjs scripts/check-seller-product-draft.ts",
     "test:direct-upload": "node --experimental-strip-types --import ./scripts/register-api-import-hook.mjs scripts/check-direct-upload.ts",
+    "test:finalize": "node --experimental-strip-types --import ./scripts/register-api-import-hook.mjs scripts/check-product-finalize.ts",
     "compile": "hardhat compile",
     "test:escrow": "hardhat test",
     "deploy:sepolia": "hardhat run scripts/deploy.cjs --network sepolia",
