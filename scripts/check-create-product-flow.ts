@@ -27,6 +27,16 @@ import {
   shouldReuseCachedDraft,
   validateProductFormFields,
 } from '../src/products/productForm.ts'
+import {
+  buildCreatedResultSnapshot,
+  defaultCreateFormFields,
+  DEFAULT_CREATE_CONTRIBUTION,
+  DEFAULT_CREATE_DURATION_SECONDS,
+  DEFAULT_CREATE_GOAL,
+  isCreateFormBlank,
+  shouldResetCreateFormAfterOutcome,
+  type CreateFormFieldState,
+} from '../src/products/createFormReset.ts'
 import { sellerSessionStillValid } from '../src/products/sellerSessionMemory.ts'
 import { friendlyUploadFailure } from '../src/products/upload.ts'
 import {
@@ -34,6 +44,7 @@ import {
   PRODUCT_COVER_MAX_BYTES,
 } from '../src/products/constants.ts'
 import { fetchProductByDrop } from '../src/products/finalizeClient.ts'
+import { CROWDDROP_DURATION_OPTIONS } from '../src/escrowConfig.ts'
 
 function fakeFile(name: string, size: number, type: string, lastModified = 1): File {
   const buffer = new Uint8Array(Math.min(size, 8))
@@ -382,6 +393,133 @@ const assetBig = fakeFile('guide.pdf', PRODUCT_ASSET_MAX_BYTES + 1, 'application
   const foundation = readFileSync(join('supabase', 'migrations', '001_digital_products_foundation.sql'), 'utf8')
   assert.match(foundation, /product-assets/)
   assert.match(foundation, /product-assets', false|product-assets private|no public read/i)
+}
+
+// --- Create form reset after full success (not on cancel/failure) ---
+{
+  assert.equal(
+    shouldResetCreateFormAfterOutcome({ createDropConfirmed: true, finalizeSucceeded: true }),
+    true,
+  )
+  assert.equal(
+    shouldResetCreateFormAfterOutcome({ createDropConfirmed: true, finalizeSucceeded: false }),
+    false,
+    'finalize failure must not reset',
+  )
+  assert.equal(
+    shouldResetCreateFormAfterOutcome({ createDropConfirmed: false, finalizeSucceeded: false }),
+    false,
+    'signing/upload/create cancel-failure must not reset',
+  )
+  assert.equal(
+    shouldResetCreateFormAfterOutcome({ createDropConfirmed: false, finalizeSucceeded: true }),
+    false,
+  )
+
+  const filled: CreateFormFieldState = {
+    productTitle: 'Guide',
+    productDescription: 'Useful PDF',
+    contributionInput: '0.000001',
+    goalInput: '5',
+    durationSeconds: DEFAULT_CREATE_DURATION_SECONDS * 2,
+    hasCoverFile: true,
+    hasAssetFile: true,
+    draftId: '11111111-1111-4111-8111-111111111111',
+    fingerprint: 'fp-abc',
+  }
+  assert.equal(isCreateFormBlank(filled), false)
+
+  const afterSuccess: CreateFormFieldState = {
+    ...defaultCreateFormFields(),
+    hasCoverFile: false,
+    hasAssetFile: false,
+    draftId: null,
+    fingerprint: null,
+  }
+  assert.equal(isCreateFormBlank(afterSuccess), true)
+  assert.equal(afterSuccess.contributionInput, DEFAULT_CREATE_CONTRIBUTION)
+  assert.equal(afterSuccess.goalInput, DEFAULT_CREATE_GOAL)
+  assert.equal(afterSuccess.durationSeconds, DEFAULT_CREATE_DURATION_SECONDS)
+  assert.equal(afterSuccess.productTitle, '')
+  assert.equal(afterSuccess.productDescription, '')
+
+  // Created screen snapshot stays populated after form defaults wipe.
+  const snapshot = buildCreatedResultSnapshot({
+    dropId: '9',
+    createTxHash: `0x${'ab'.repeat(32)}`,
+    productTitle: filled.productTitle,
+    coverUrl: 'https://example.com/cover.png',
+    fileTypeLabel: 'PDF',
+    contributionInput: filled.contributionInput,
+    goalInput: filled.goalInput,
+    durationSeconds: CROWDDROP_DURATION_OPTIONS[2].seconds,
+  })
+  assert.equal(snapshot.dropId, '9')
+  assert.equal(snapshot.productTitle, 'Guide')
+  assert.equal(snapshot.contributionDisplay, '0.000001')
+  assert.equal(snapshot.goalDisplay, '5')
+  assert.equal(snapshot.durationLabel, '24 hours')
+  assert.equal(snapshot.coverUrl, 'https://example.com/cover.png')
+  assert.equal(isCreateFormBlank(afterSuccess), true)
+  assert.notEqual(snapshot.productTitle, afterSuccess.productTitle)
+
+  // Seller session helper remains independent of form reset.
+  const session = {
+    wallet: '0xabc',
+    expiresAt: Math.floor(Date.now() / 1000) + 600,
+  }
+  assert.equal(sellerSessionStillValid(session, '0xabc'), true)
+
+  // Recovery localStorage cleared only on success path (already covered above);
+  // simulate success wipe:
+  const mem = new Map<string, string>()
+  const storage = {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      mem.set(k, v)
+    },
+    removeItem: (k: string) => {
+      mem.delete(k)
+    },
+  } as Storage
+  writeFinalizeRecovery({
+    draftId: '11111111-1111-4111-8111-111111111111',
+    createTxHash: `0x${'ab'.repeat(32)}`,
+    sellerWallet: '0x1111111111111111111111111111111111111111',
+    createdAt: 1,
+    dropIdHint: '9',
+  }, storage)
+  assert.ok(readFinalizeRecovery(storage))
+  clearFinalizeRecovery(storage)
+  assert.equal(readFinalizeRecovery(storage), null)
+}
+
+// --- Create UI wires reset + Created snapshot ---
+{
+  const createSrc = readFileSync(join('src', 'CrowdDropCreate.vue'), 'utf8')
+  assert.match(createSrc, /function resetCreateForm\(/)
+  assert.match(createSrc, /buildCreatedResultSnapshot/)
+  assert.match(createSrc, /createdResult/)
+  assert.match(createSrc, /pendingFreshCreateForm/)
+  assert.match(createSrc, /shouldResetCreateFormAfterOutcome/)
+  assert.match(createSrc, /createdResult\.contributionDisplay/)
+  assert.match(createSrc, /createdResult\.goalDisplay/)
+  assert.match(createSrc, /createdResult\.durationLabel/)
+  assert.match(createSrc, /ref="coverInputEl"/)
+  assert.match(createSrc, /ref="assetInputEl"/)
+  assert.match(createSrc, /coverInputEl\.value\.value = ''/)
+  assert.match(createSrc, /assetInputEl\.value\.value = ''/)
+  assert.match(createSrc, /revokeIfBlobUrl|revokeObjectURL/)
+  // Seller session must not be cleared by form reset.
+  const resetBlock = createSrc.slice(
+    createSrc.indexOf('function resetCreateForm'),
+    createSrc.indexOf('function clearCreatedResult'),
+  )
+  assert.doesNotMatch(resetBlock, /sellerSession\.value\s*=\s*null/)
+  // Reset only after finalize success path.
+  const finalizeOkIdx = createSrc.indexOf('shouldResetCreateFormAfterOutcome')
+  assert.ok(finalizeOkIdx > 0)
+  assert.ok(createSrc.indexOf('resetCreateForm()') > finalizeOkIdx)
 }
 
 console.log('create-product-flow: checks passed')

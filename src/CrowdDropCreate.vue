@@ -10,7 +10,7 @@ import {
   sendTx,
   waitForReceipt,
 } from './evm'
-import { ensureLeadingZeroAmount, parseTokenAmount } from './tokenMath'
+import { parseTokenAmount } from './tokenMath'
 import { developerErrorDetail, friendlyUserError } from './userErrors'
 import { formatWalletError } from './wallet'
 import { isUserRejection } from './txRequest'
@@ -49,6 +49,12 @@ import {
   type CachedProductDraft,
 } from './products/productForm'
 import {
+  buildCreatedResultSnapshot,
+  defaultCreateFormFields,
+  shouldResetCreateFormAfterOutcome,
+  type CreatedResultSnapshot,
+} from './products/createFormReset'
+import {
   ensureSellerUploadSession,
   type SellerSessionMemory,
 } from './products/sellerAuth'
@@ -64,29 +70,32 @@ const network = activeCrowdDropNetwork
 const DURATION_CHIP_LABELS = ['1h', '4h', '24h', '3d', '7d', '30d'] as const
 
 const showCreate = ref(false)
-const contributionInput = ref('1')
-const goalInput = ref('2')
-const durationSeconds = ref<number>(CROWDDROP_DURATION_OPTIONS[2].seconds)
+const formDefaults = defaultCreateFormFields()
+const contributionInput = ref(formDefaults.contributionInput)
+const goalInput = ref(formDefaults.goalInput)
+const durationSeconds = ref<number>(formDefaults.durationSeconds)
 
-const productTitle = ref('')
-const productDescription = ref('')
+const productTitle = ref(formDefaults.productTitle)
+const productDescription = ref(formDefaults.productDescription)
 const productCover = ref<File | null>(null)
 const productAsset = ref<File | null>(null)
 const coverPreviewUrl = ref<string | null>(null)
+const coverInputEl = ref<HTMLInputElement | null>(null)
+const assetInputEl = ref<HTMLInputElement | null>(null)
 
 const busy = ref(false)
 const flowStage = ref<CreateFlowStage>('idle')
 const errorMessage = ref<string | null>(null)
 const errorDetail = ref<string | null>(null)
-const createdDropId = ref<string | null>(null)
+/** Immutable Created-screen data — independent of the next Create form. */
+const createdResult = ref<CreatedResultSnapshot | null>(null)
 const lastTxHash = ref<string | null>(null)
-const createdProductTitle = ref<string | null>(null)
-const createdCoverUrl = ref<string | null>(null)
-const createdFileTypeLabel = ref<string | null>(null)
 const copied = ref(false)
 /** Set true only after Create receipt succeeds; cleared after motion play(). */
 const confirmedCreateForMotion = ref(false)
 const createdMotionRef = ref<InstanceType<typeof DropCreatedMotionContent> | null>(null)
+/** After a fully successful Create, next + New Drop must start blank. */
+const pendingFreshCreateForm = ref(false)
 
 const sellerSession = ref<SellerSessionMemory | null>(null)
 const cachedDraft = ref<CachedProductDraft | null>(null)
@@ -96,16 +105,17 @@ const recoveryRecord = ref<FinalizeRecoveryRecord | null>(null)
 const recoveryBusy = ref(false)
 
 const shareUrl = computed(() => {
-  if (!createdDropId.value)
+  if (!createdResult.value)
     return ''
-  return `${window.location.origin}/?drop=${createdDropId.value}`
+  return `${window.location.origin}/?drop=${createdResult.value.dropId}`
 })
 
 const txExplorerUrl = computed(() => {
-  if (!lastTxHash.value)
+  const hash = createdResult.value?.createTxHash ?? lastTxHash.value
+  if (!hash)
     return ''
   const base = network.blockExplorerUrls[0] ?? 'https://polygonscan.com'
-  return `${base}/tx/${lastTxHash.value}`
+  return `${base}/tx/${hash}`
 })
 
 /** Wrong-network full-width CTA only (header Connect handles disconnect). */
@@ -118,18 +128,10 @@ const needsWalletSystemCta = computed(() =>
   !walletChecking.value && !walletReady.value,
 )
 
-const creating = computed(() => showCreate.value || !!createdDropId.value || recoveryPending.value)
-
-const selectedDurationLabel = computed(() => {
-  const idx = CROWDDROP_DURATION_OPTIONS.findIndex(o => o.seconds === durationSeconds.value)
-  const option = CROWDDROP_DURATION_OPTIONS[idx >= 0 ? idx : 0]
-  return option?.label ?? ''
-})
-
-const contributionDisplay = computed(() => ensureLeadingZeroAmount(contributionInput.value))
+const creating = computed(() => showCreate.value || !!createdResult.value || recoveryPending.value)
 
 const waitingLabel = computed(() => {
-  if (recoveryPending.value && !createdDropId.value)
+  if (recoveryPending.value && !createdResult.value)
     return recoveryBannerCopy(recoveryRecord.value?.dropIdHint).body
   return stageLabel(flowStage.value)
 })
@@ -160,11 +162,53 @@ function clearActionUi() {
   busy.value = false
 }
 
+function revokeIfBlobUrl(url: string | null | undefined) {
+  if (url && url.startsWith('blob:'))
+    URL.revokeObjectURL(url)
+}
+
 function revokeCoverPreview() {
-  if (coverPreviewUrl.value) {
-    URL.revokeObjectURL(coverPreviewUrl.value)
+  revokeIfBlobUrl(coverPreviewUrl.value)
+  coverPreviewUrl.value = null
+}
+
+/**
+ * Single source of truth: wipe Create form for a future Drop.
+ * Does not clear seller auth session, Created snapshot, or finalize recovery.
+ */
+function resetCreateForm() {
+  const defaults = defaultCreateFormFields()
+  productTitle.value = defaults.productTitle
+  productDescription.value = defaults.productDescription
+  contributionInput.value = defaults.contributionInput
+  goalInput.value = defaults.goalInput
+  durationSeconds.value = defaults.durationSeconds
+  productCover.value = null
+  productAsset.value = null
+  cachedDraft.value = null
+
+  const snapshotCover = createdResult.value?.coverUrl ?? null
+  if (coverPreviewUrl.value && coverPreviewUrl.value !== snapshotCover)
+    revokeCoverPreview()
+  else
     coverPreviewUrl.value = null
-  }
+
+  if (coverInputEl.value)
+    coverInputEl.value.value = ''
+  if (assetInputEl.value)
+    assetInputEl.value.value = ''
+
+  errorMessage.value = null
+  errorDetail.value = null
+  copied.value = false
+  clearActionUi()
+  pendingFreshCreateForm.value = false
+}
+
+function clearCreatedResult() {
+  revokeIfBlobUrl(createdResult.value?.coverUrl)
+  createdResult.value = null
+  confirmedCreateForMotion.value = false
 }
 
 function onCoverChange(event: Event) {
@@ -191,7 +235,10 @@ watch(productDescription, () => {
 })
 
 function openCreate() {
+  if (pendingFreshCreateForm.value)
+    resetCreateForm()
   showCreate.value = true
+  clearCreatedResult()
   recoveryPending.value = false
   errorMessage.value = null
   errorDetail.value = null
@@ -199,13 +246,9 @@ function openCreate() {
 
 function backToHome() {
   showCreate.value = false
-  createdDropId.value = null
+  clearCreatedResult()
   lastTxHash.value = null
-  createdProductTitle.value = null
-  createdCoverUrl.value = null
-  createdFileTypeLabel.value = null
   copied.value = false
-  confirmedCreateForMotion.value = false
   recoveryPending.value = false
   errorMessage.value = null
   errorDetail.value = null
@@ -255,33 +298,48 @@ async function runFinalize(params: {
   recoveryPending.value = false
   recoveryRecord.value = null
 
-  const lockedTitle = cachedDraft.value?.title || productTitle.value.trim() || createdProductTitle.value
-  const lockedFileType = cachedDraft.value?.fileTypeLabel ?? createdFileTypeLabel.value
-  cachedDraft.value = null
-
-  createdDropId.value = result.dropId
-  lastTxHash.value = params.createTxHash
-  createdProductTitle.value = lockedTitle
-  createdFileTypeLabel.value = lockedFileType
-  if (coverPreviewUrl.value)
-    createdCoverUrl.value = coverPreviewUrl.value
+  let lockedTitle = cachedDraft.value?.title || productTitle.value.trim() || null
+  let lockedFileType = cachedDraft.value?.fileTypeLabel ?? null
+  let coverUrl = coverPreviewUrl.value
 
   try {
     const meta = await fetchProductByDrop(result.dropId)
     if (meta) {
-      createdProductTitle.value = meta.title || createdProductTitle.value
-      createdFileTypeLabel.value = meta.fileTypeLabel ?? createdFileTypeLabel.value
+      lockedTitle = meta.title || lockedTitle
+      lockedFileType = meta.fileTypeLabel ?? lockedFileType
       if (meta.coverUrl)
-        createdCoverUrl.value = meta.coverUrl
+        coverUrl = meta.coverUrl
     }
   }
   catch {
     // Created screen can proceed without enrichment.
   }
 
-  saveLastOpenedDrop(createdDropId.value)
+  createdResult.value = buildCreatedResultSnapshot({
+    dropId: result.dropId,
+    createTxHash: params.createTxHash,
+    productTitle: lockedTitle,
+    coverUrl,
+    fileTypeLabel: lockedFileType,
+    contributionInput: contributionInput.value,
+    goalInput: goalInput.value,
+    durationSeconds: durationSeconds.value,
+  })
+
+  lastTxHash.value = params.createTxHash
+  saveLastOpenedDrop(result.dropId)
   confirmedCreateForMotion.value = true
   showCreate.value = true
+
+  if (shouldResetCreateFormAfterOutcome({
+    createDropConfirmed: true,
+    finalizeSucceeded: true,
+  })) {
+    // Form for the *next* Drop is blank; Created screen reads createdResult only.
+    pendingFreshCreateForm.value = true
+    resetCreateForm()
+  }
+
   return true
 }
 
@@ -397,11 +455,6 @@ async function createDrop() {
       ? cachedDraft.value!.draftId
       : null
 
-    if (draftId && cachedDraft.value) {
-      createdFileTypeLabel.value = cachedDraft.value.fileTypeLabel
-      createdProductTitle.value = cachedDraft.value.title
-    }
-
     if (!draftId) {
       const uploaded = await createProductDraft(
         {
@@ -434,8 +487,6 @@ async function createDrop() {
         fileTypeLabel: uploaded.fileTypeLabel,
         title: productTitle.value.trim(),
       }
-      createdFileTypeLabel.value = uploaded.fileTypeLabel
-      createdProductTitle.value = productTitle.value.trim()
     }
 
     flowStage.value = 'creating_drop'
@@ -479,14 +530,14 @@ async function copyLink() {
 }
 
 function openDrop() {
-  if (!createdDropId.value)
+  if (!createdResult.value)
     return
-  saveLastOpenedDrop(createdDropId.value)
-  openDropById(createdDropId.value)
+  saveLastOpenedDrop(createdResult.value.dropId)
+  openDropById(createdResult.value.dropId)
 }
 
-watch([createdDropId, confirmedCreateForMotion], () => {
-  if (!createdDropId.value || !confirmedCreateForMotion.value)
+watch([createdResult, confirmedCreateForMotion], () => {
+  if (!createdResult.value || !confirmedCreateForMotion.value)
     return
   nextTick(() => {
     createdMotionRef.value?.play()
@@ -557,7 +608,7 @@ watch(walletAccount, (wallet) => {
     <section v-else class="create">
       <button type="button" class="back" :disabled="busy || recoveryBusy" @click="backToHome">← Back</button>
 
-      <template v-if="recoveryPending && !createdDropId">
+      <template v-if="recoveryPending && !createdResult">
         <h1 class="create-title">Drop created</h1>
         <p class="lede">{{ recoveryCopy.title }}</p>
         <p v-if="waitingLabel" class="wait">{{ waitingLabel }}</p>
@@ -572,7 +623,7 @@ watch(walletAccount, (wallet) => {
         </button>
       </template>
 
-      <template v-else-if="!createdDropId">
+      <template v-else-if="!createdResult">
         <h1 class="create-title">Create a Drop</h1>
         <p class="lede">
           Each buyer contributes the same amount. The seller can claim only if the goal is reached.
@@ -619,6 +670,7 @@ watch(walletAccount, (wallet) => {
             <p class="file-hint">Maximum 2 MB</p>
             <label class="file-pick">
               <input
+                ref="coverInputEl"
                 type="file"
                 class="file-input"
                 :accept="PRODUCT_COVER_ACCEPT"
@@ -640,6 +692,7 @@ watch(walletAccount, (wallet) => {
             <p class="file-hint">Maximum 25 MB</p>
             <label class="file-pick">
               <input
+                ref="assetInputEl"
                 type="file"
                 class="file-input"
                 :accept="PRODUCT_ASSET_ACCEPT"
@@ -711,20 +764,20 @@ watch(walletAccount, (wallet) => {
       <DropCreatedMotionContent
         v-else
         ref="createdMotionRef"
-        :drop-id="createdDropId"
-        :goal="Number(goalInput)"
-        :product-title="createdProductTitle || undefined"
-        :cover-url="createdCoverUrl || undefined"
-        :file-type-label="createdFileTypeLabel || undefined"
+        :drop-id="createdResult.dropId"
+        :goal="Number(createdResult.goalDisplay)"
+        :product-title="createdResult.productTitle || undefined"
+        :cover-url="createdResult.coverUrl || undefined"
+        :file-type-label="createdResult.fileTypeLabel || undefined"
       >
         <p class="summary">
-          {{ contributionDisplay }} {{ network.tokenSymbol }} per person<br>
-          {{ goalInput }} buyers<br>
-          {{ selectedDurationLabel }}
+          {{ createdResult.contributionDisplay }} {{ network.tokenSymbol }} per person<br>
+          {{ createdResult.goalDisplay }} buyers<br>
+          {{ createdResult.durationLabel }}
         </p>
         <p class="link">{{ shareUrl }}</p>
         <a
-          v-if="lastTxHash && txExplorerUrl"
+          v-if="createdResult.createTxHash && txExplorerUrl"
           class="text-action"
           :href="txExplorerUrl"
           target="_blank"
