@@ -946,10 +946,10 @@ label span,
   display: flex;
   align-items: center;
   gap: 8px;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
+  border: 1px solid #E2E2DE;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
   min-height: 44px;
 }
 .field input {
@@ -960,7 +960,7 @@ label span,
   font: inherit;
   font-size: 15px;
   color: #141414;
-  min-height: 44px;
+  min-height: 24px;
   outline: none;
   padding: 0;
   box-shadow: none;
@@ -969,16 +969,21 @@ label span,
   opacity: 0.55;
 }
 .field:focus-within,
-.textarea:focus {
+.textarea:focus,
+.textarea:focus-visible,
+.field input:focus,
+.field input:focus-visible {
   outline: none;
+  box-shadow: none;
+  border-color: #E2E2DE;
 }
 .textarea {
   width: 100%;
   box-sizing: border-box;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
+  border: 1px solid #E2E2DE;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
   font: inherit;
   font-size: 15px;
   color: #141414;
