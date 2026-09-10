@@ -13,6 +13,8 @@ export const AUTH_TEST_ACTION = 'auth_test' as const satisfies CrowdDropAuthActi
 
 export const SELLER_UPLOAD_ACTION = 'seller_upload' as const satisfies CrowdDropAuthAction
 
+export const PRODUCT_DOWNLOAD_ACTION = 'product_download' as const satisfies CrowdDropAuthAction
+
 export const AUTH_CHALLENGE_TTL_SECONDS = 5 * 60
 
 export const CROWDDROP_AUTH_DOMAIN = {
@@ -26,6 +28,17 @@ export const CROWDDROP_AUTH_TYPES = {
   Auth: [
     { name: 'action', type: 'string' },
     { name: 'wallet', type: 'address' },
+    { name: 'nonce', type: 'string' },
+    { name: 'expiresAt', type: 'uint256' },
+  ],
+} as const
+
+/** Product download binds dropId so a signature cannot be reused across products. */
+export const CROWDDROP_PRODUCT_DOWNLOAD_TYPES = {
+  Auth: [
+    { name: 'action', type: 'string' },
+    { name: 'wallet', type: 'address' },
+    { name: 'dropId', type: 'uint256' },
     { name: 'nonce', type: 'string' },
     { name: 'expiresAt', type: 'uint256' },
   ],
@@ -45,11 +58,22 @@ export type CrowdDropAuthMessage = {
   expiresAt: bigint
 }
 
+export type CrowdDropProductDownloadMessage = CrowdDropAuthMessage & {
+  dropId: bigint
+}
+
 export type CrowdDropAuthTypedData = {
   domain: typeof CROWDDROP_AUTH_DOMAIN
   types: typeof CROWDDROP_AUTH_TYPES
   primaryType: 'Auth'
   message: CrowdDropAuthMessage
+}
+
+export type CrowdDropProductDownloadTypedData = {
+  domain: typeof CROWDDROP_AUTH_DOMAIN
+  types: typeof CROWDDROP_PRODUCT_DOWNLOAD_TYPES
+  primaryType: 'Auth'
+  message: CrowdDropProductDownloadMessage
 }
 
 /** JSON payload shape for eth_signTypedData_v4 (uint256 as decimal string). */
@@ -70,6 +94,7 @@ export type CrowdDropAuthProviderPayload = {
     wallet: `0x${string}`
     nonce: string
     expiresAt: string
+    dropId?: string
   }
 }
 
@@ -92,11 +117,45 @@ export function buildCrowdDropAuthTypedData(params: {
   }
 }
 
-export function toProviderTypedDataPayload(data: CrowdDropAuthTypedData): CrowdDropAuthProviderPayload {
+export function buildProductDownloadTypedData(params: {
+  wallet: string
+  dropId: number | string | bigint
+  nonce: string
+  expiresAt: number
+}): CrowdDropProductDownloadTypedData {
+  const dropId = typeof params.dropId === 'bigint' ? params.dropId : BigInt(params.dropId)
+  if (dropId <= 0n)
+    throw new Error('Invalid dropId.')
+  return {
+    domain: CROWDDROP_AUTH_DOMAIN,
+    types: CROWDDROP_PRODUCT_DOWNLOAD_TYPES,
+    primaryType: 'Auth',
+    message: {
+      action: PRODUCT_DOWNLOAD_ACTION,
+      wallet: getAddress(params.wallet),
+      dropId,
+      nonce: params.nonce,
+      expiresAt: BigInt(params.expiresAt),
+    },
+  }
+}
+
+export function toProviderTypedDataPayload(
+  data: CrowdDropAuthTypedData | CrowdDropProductDownloadTypedData,
+): CrowdDropAuthProviderPayload {
+  const message: CrowdDropAuthProviderPayload['message'] = {
+    action: data.message.action,
+    wallet: data.message.wallet,
+    nonce: data.message.nonce,
+    expiresAt: data.message.expiresAt.toString(),
+  }
+  if ('dropId' in data.message)
+    message.dropId = data.message.dropId.toString()
+
   return {
     types: {
       EIP712Domain: [...CROWDDROP_AUTH_EIP712_DOMAIN_TYPES],
-      Auth: [...CROWDDROP_AUTH_TYPES.Auth],
+      Auth: [...data.types.Auth],
     },
     primaryType: data.primaryType,
     domain: {
@@ -105,12 +164,7 @@ export function toProviderTypedDataPayload(data: CrowdDropAuthTypedData): CrowdD
       chainId: data.domain.chainId,
       verifyingContract: data.domain.verifyingContract,
     },
-    message: {
-      action: data.message.action,
-      wallet: data.message.wallet,
-      nonce: data.message.nonce,
-      expiresAt: data.message.expiresAt.toString(),
-    },
+    message,
   }
 }
 
@@ -141,12 +195,39 @@ export function parseProviderTypedData(input: unknown): CrowdDropAuthTypedData {
   })
 }
 
+export function parseProductDownloadTypedData(input: unknown): CrowdDropProductDownloadTypedData {
+  if (!input || typeof input !== 'object')
+    throw new Error('Typed data must be an object.')
+
+  const raw = input as CrowdDropAuthProviderPayload
+  if (raw.primaryType !== 'Auth')
+    throw new Error('Unexpected primaryType.')
+
+  const expiresRaw = raw.message?.expiresAt
+  const expiresAt = typeof expiresRaw === 'string' || typeof expiresRaw === 'number'
+    ? BigInt(expiresRaw)
+    : null
+  if (expiresAt === null || expiresAt < 0n)
+    throw new Error('Invalid expiresAt.')
+
+  const dropRaw = raw.message?.dropId
+  if (dropRaw === undefined || dropRaw === null || dropRaw === '')
+    throw new Error('dropId is required.')
+
+  return buildProductDownloadTypedData({
+    wallet: String(raw.message?.wallet ?? ''),
+    dropId: dropRaw,
+    nonce: String(raw.message?.nonce ?? ''),
+    expiresAt: Number(expiresAt),
+  })
+}
+
 export type VerifyCrowdDropAuthResult =
   | { ok: true, recovered: `0x${string}` }
   | { ok: false, reason: string }
 
 export async function verifyCrowdDropAuthSignature(
-  typedData: CrowdDropAuthTypedData,
+  typedData: CrowdDropAuthTypedData | CrowdDropProductDownloadTypedData,
   signature: Hex,
   options: {
     expectedAction?: string
@@ -176,7 +257,7 @@ export async function verifyCrowdDropAuthSignature(
       primaryType: typedData.primaryType,
       message: typedData.message,
       signature,
-    })
+    } as Parameters<typeof recoverTypedDataAddress>[0])
   }
   catch {
     return { ok: false, reason: 'Invalid signature.' }
@@ -193,7 +274,7 @@ export async function verifyCrowdDropAuthSignature(
     primaryType: typedData.primaryType,
     message: typedData.message,
     signature,
-  })
+  } as Parameters<typeof verifyTypedData>[0])
 
   if (!valid)
     return { ok: false, reason: 'Signature verification failed.' }

@@ -40,7 +40,7 @@ const community = [DROP_ACTIVE, DROP_COMMUNITY_2]
       <h2>Community</h2>
       <div v-for="d in community" :key="d.id" class="row">
         <div class="row-top">
-          <span class="lead">${{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
+          <span class="lead">{{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
           <span class="status">{{ d.status }}</span>
         </div>
         <ParticipantDots :joined="d.joined" :goal="d.goal" />

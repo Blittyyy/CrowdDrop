@@ -10,7 +10,7 @@ import {
   sendTx,
   waitForReceipt,
 } from './evm'
-import { parseTokenAmount } from './tokenMath'
+import { ensureLeadingZeroAmount, parseTokenAmount } from './tokenMath'
 import { developerErrorDetail, friendlyUserError } from './userErrors'
 import { formatWalletError } from './wallet'
 import { isUserRejection } from './txRequest'
@@ -20,7 +20,6 @@ import DropLists from './DropLists.vue'
 import DropCreatedMotionContent from './motion/DropCreatedMotionContent.vue'
 import WalletBar from './WalletBar.vue'
 import {
-  connectWallet,
   switchWalletNetwork,
   walletAccount,
   walletBusy,
@@ -109,6 +108,12 @@ const txExplorerUrl = computed(() => {
   return `${base}/tx/${lastTxHash.value}`
 })
 
+/** Wrong-network full-width CTA only (header Connect handles disconnect). */
+const needsNetworkSwitchCta = computed(() =>
+  !walletChecking.value && !!walletAccount.value && !walletOnActiveNetwork.value,
+)
+
+/** Soften + New Drop when wallet is not ready (disconnected or wrong network). */
 const needsWalletSystemCta = computed(() =>
   !walletChecking.value && !walletReady.value,
 )
@@ -120,6 +125,8 @@ const selectedDurationLabel = computed(() => {
   const option = CROWDDROP_DURATION_OPTIONS[idx >= 0 ? idx : 0]
   return option?.label ?? ''
 })
+
+const contributionDisplay = computed(() => ensureLeadingZeroAmount(contributionInput.value))
 
 const waitingLabel = computed(() => {
   if (recoveryPending.value && !createdDropId.value)
@@ -523,18 +530,8 @@ watch(walletAccount, (wallet) => {
     </header>
 
     <template v-if="!creating">
-      <div v-if="needsWalletSystemCta" class="sys-wallet">
+      <div v-if="needsNetworkSwitchCta" class="sys-wallet">
         <button
-          v-if="!walletAccount"
-          type="button"
-          class="sys-btn"
-          :disabled="walletBusy"
-          @click="connectWallet"
-        >
-          Connect
-        </button>
-        <button
-          v-else
           type="button"
           class="sys-btn"
           :disabled="walletBusy"
@@ -721,7 +718,7 @@ watch(walletAccount, (wallet) => {
         :file-type-label="createdFileTypeLabel || undefined"
       >
         <p class="summary">
-          {{ contributionInput }} {{ network.tokenSymbol }} per person<br>
+          {{ contributionDisplay }} {{ network.tokenSymbol }} per person<br>
           {{ goalInput }} buyers<br>
           {{ selectedDurationLabel }}
         </p>
@@ -896,10 +893,10 @@ label span,
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #E2E2DE;
-  border-radius: 8px;
-  padding: 0 12px;
-  background: #fff;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
   min-height: 44px;
 }
 .field input {
@@ -913,17 +910,22 @@ label span,
   min-height: 44px;
   outline: none;
   padding: 0;
+  box-shadow: none;
 }
 .field input:disabled {
   opacity: 0.55;
 }
+.field:focus-within,
+.textarea:focus {
+  outline: none;
+}
 .textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #E2E2DE;
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: #fff;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
   font: inherit;
   font-size: 15px;
   color: #141414;
@@ -931,6 +933,7 @@ label span,
   resize: vertical;
   min-height: 88px;
   outline: none;
+  box-shadow: none;
 }
 .textarea:disabled {
   opacity: 0.55;

@@ -354,7 +354,9 @@ const assetBig = fakeFile('guide.pdf', PRODUCT_ASSET_MAX_BYTES + 1, 'application
   assert.match(viewSrc, /getCachedProductByDrop/)
   assert.match(viewSrc, /product-block/)
   assert.doesNotMatch(viewSrc, /asset_path/)
-  assert.doesNotMatch(viewSrc, /Download/)
+  assert.match(viewSrc, /Unlock Product/)
+  assert.match(viewSrc, /Download Product/)
+  assert.doesNotMatch(viewSrc, /SUPABASE_SERVICE_ROLE/)
 
   const cardSrc = readFileSync(join('src', 'DropCard.vue'), 'utf8')
   assert.match(cardSrc, /productTitle/)
@@ -369,6 +371,7 @@ const assetBig = fakeFile('guide.pdf', PRODUCT_ASSET_MAX_BYTES + 1, 'application
       'complete-upload.ts',
       'draft.ts',
       'finalize.ts',
+      'unlock.ts',
       'upload-intent.ts',
     ],
   )

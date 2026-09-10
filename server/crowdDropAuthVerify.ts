@@ -1,11 +1,12 @@
 /**
  * Server-only CrowdDrop EIP-712 verification for Vercel API routes.
- * viem is loaded dynamically so the function module initializes cleanly.
+ * Supports seller_upload Auth and product_download Auth (with dropId).
  */
 import type { Hex } from 'viem'
 
 export const AUTH_TEST_ACTION = 'auth_test'
 export const SELLER_UPLOAD_ACTION = 'seller_upload'
+export const PRODUCT_DOWNLOAD_ACTION = 'product_download'
 
 const POLYGON_CHAIN_ID = 137
 const POLYGON_CROWDDROP_ADDRESS = '0xCd9fAa04F12B3BcF926359057e1Ff445E7e75c12' as const
@@ -14,6 +15,16 @@ const CROWDDROP_AUTH_TYPES = {
   Auth: [
     { name: 'action', type: 'string' },
     { name: 'wallet', type: 'address' },
+    { name: 'nonce', type: 'string' },
+    { name: 'expiresAt', type: 'uint256' },
+  ],
+} as const
+
+const CROWDDROP_PRODUCT_DOWNLOAD_TYPES = {
+  Auth: [
+    { name: 'action', type: 'string' },
+    { name: 'wallet', type: 'address' },
+    { name: 'dropId', type: 'uint256' },
     { name: 'nonce', type: 'string' },
     { name: 'expiresAt', type: 'uint256' },
   ],
@@ -31,6 +42,24 @@ type CrowdDropAuthTypedData = {
   message: {
     action: string
     wallet: `0x${string}`
+    nonce: string
+    expiresAt: bigint
+  }
+}
+
+type CrowdDropProductDownloadTypedData = {
+  domain: {
+    name: string
+    version: string
+    chainId: number
+    verifyingContract: `0x${string}`
+  }
+  types: typeof CROWDDROP_PRODUCT_DOWNLOAD_TYPES
+  primaryType: 'Auth'
+  message: {
+    action: string
+    wallet: `0x${string}`
+    dropId: bigint
     nonce: string
     expiresAt: bigint
   }
@@ -58,6 +87,31 @@ function buildTypedData(params: {
     message: {
       action: params.action,
       wallet: params.wallet as `0x${string}`,
+      nonce: params.nonce,
+      expiresAt: BigInt(params.expiresAt),
+    },
+  }
+}
+
+function buildProductDownloadTypedData(params: {
+  wallet: string
+  dropId: bigint
+  nonce: string
+  expiresAt: number
+}): CrowdDropProductDownloadTypedData {
+  return {
+    domain: {
+      name: 'CrowdDrop',
+      version: '1',
+      chainId: POLYGON_CHAIN_ID,
+      verifyingContract: POLYGON_CROWDDROP_ADDRESS,
+    },
+    types: CROWDDROP_PRODUCT_DOWNLOAD_TYPES,
+    primaryType: 'Auth',
+    message: {
+      action: PRODUCT_DOWNLOAD_ACTION,
+      wallet: params.wallet as `0x${string}`,
+      dropId: params.dropId,
       nonce: params.nonce,
       expiresAt: BigInt(params.expiresAt),
     },
@@ -100,12 +154,66 @@ export function parseProviderTypedData(input: unknown): CrowdDropAuthTypedData {
   })
 }
 
+export function parseProductDownloadTypedData(input: unknown): CrowdDropProductDownloadTypedData {
+  if (!input || typeof input !== 'object')
+    throw new Error('Typed data must be an object.')
+
+  const raw = input as {
+    primaryType?: string
+    message?: {
+      action?: string
+      wallet?: string
+      dropId?: string | number
+      nonce?: string
+      expiresAt?: string | number
+    }
+    types?: { Auth?: Array<{ name: string, type: string }> }
+  }
+
+  if (raw.primaryType !== 'Auth')
+    throw new Error('Unexpected primaryType.')
+
+  const expiresRaw = raw.message?.expiresAt
+  const expiresAt = typeof expiresRaw === 'string' || typeof expiresRaw === 'number'
+    ? BigInt(expiresRaw)
+    : null
+  if (expiresAt === null || expiresAt < 0n)
+    throw new Error('Invalid expiresAt.')
+
+  const wallet = String(raw.message?.wallet ?? '')
+  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet))
+    throw new Error('Invalid wallet.')
+
+  const dropRaw = raw.message?.dropId
+  if (dropRaw === undefined || dropRaw === null || dropRaw === '')
+    throw new Error('dropId is required.')
+  const dropId = BigInt(dropRaw)
+  if (dropId <= 0n)
+    throw new Error('Invalid dropId.')
+
+  const action = String(raw.message?.action ?? '')
+  if (action !== PRODUCT_DOWNLOAD_ACTION)
+    throw new Error('Invalid action.')
+
+  // Require dropId field in Auth type list to prevent stripping.
+  const authFields = raw.types?.Auth ?? []
+  if (!authFields.some(field => field.name === 'dropId' && field.type === 'uint256'))
+    throw new Error('Typed data must bind dropId.')
+
+  return buildProductDownloadTypedData({
+    wallet,
+    dropId,
+    nonce: String(raw.message?.nonce ?? ''),
+    expiresAt: Number(expiresAt),
+  })
+}
+
 export type VerifyCrowdDropAuthResult =
   | { ok: true, recovered: `0x${string}` }
   | { ok: false, reason: string }
 
 export async function verifyCrowdDropAuthSignature(
-  typedData: CrowdDropAuthTypedData,
+  typedData: CrowdDropAuthTypedData | CrowdDropProductDownloadTypedData,
   signature: Hex,
   options: {
     expectedAction?: string
@@ -138,7 +246,7 @@ export async function verifyCrowdDropAuthSignature(
       primaryType: typedData.primaryType,
       message: typedData.message,
       signature,
-    })
+    } as never)
   }
   catch {
     return { ok: false, reason: 'Invalid signature.' }
@@ -154,7 +262,7 @@ export async function verifyCrowdDropAuthSignature(
     primaryType: typedData.primaryType,
     message: typedData.message,
     signature,
-  })
+  } as never)
 
   if (!valid)
     return { ok: false, reason: 'Signature verification failed.' }

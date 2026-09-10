@@ -62,7 +62,7 @@ function statusClass() {
     </div>
 
     <h1 class="amount">
-      <span class="num">${{ drop.contributionUsdt }}</span>
+      <span class="num">{{ drop.contributionUsdt }}</span>
       <span class="per">USDT per person</span>
     </h1>
 
@@ -72,11 +72,11 @@ function statusClass() {
       <template v-if="drop.status === 'Active'">
         <p class="progress">{{ drop.joined }} of {{ drop.goal }} joined · {{ drop.spotsLeft }} spots left</p>
         <p class="meta-line">{{ drop.remaining }} remaining</p>
-        <p class="pooled">${{ drop.pooledUsdt }} pooled</p>
+        <p class="pooled">{{ drop.pooledUsdt }} pooled</p>
       </template>
       <template v-else>
         <p class="progress">{{ drop.joined }} of {{ drop.goal }} joined</p>
-        <p class="pooled">${{ drop.pooledUsdt }} pooled</p>
+        <p class="pooled">{{ drop.pooledUsdt }} pooled</p>
       </template>
     </div>
 

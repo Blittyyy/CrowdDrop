@@ -26,7 +26,7 @@ const wallet = SHOWCASE_WALLET
       <h2>Community</h2>
       <button v-for="d in community" :key="'c' + d.id" type="button" class="row">
         <div class="row-top">
-          <span class="lead">${{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
+          <span class="lead">{{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
           <span class="status">{{ d.status }}</span>
         </div>
         <ParticipantDots :joined="d.joined" :goal="d.goal" />
@@ -41,7 +41,7 @@ const wallet = SHOWCASE_WALLET
       <h2>Your Drops</h2>
       <button v-for="d in yours" :key="'y' + d.id" type="button" class="row">
         <div class="row-top">
-          <span class="lead">${{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
+          <span class="lead">{{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
           <span class="status">{{ d.status }}</span>
         </div>
         <ParticipantDots :joined="d.joined" :goal="d.goal" />
@@ -56,7 +56,7 @@ const wallet = SHOWCASE_WALLET
       <h2>Recent</h2>
       <button v-for="d in recent" :key="'r' + d.id" type="button" class="row">
         <div class="row-top">
-          <span class="lead">${{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
+          <span class="lead">{{ d.contributionUsdt }} USDT · #{{ d.id }}</span>
           <span class="status">{{ d.status }}</span>
         </div>
         <ParticipantDots :joined="d.joined" :goal="d.goal" />

@@ -2,10 +2,11 @@ import { formatUnits } from 'viem'
 import type { DropStatusLabel } from './crowdDropAbi'
 import type { DropRecord } from './dropCatalog'
 import { REUSABLE_ALLOWANCE_TOKENS } from './escrowConfig'
+import { ensureLeadingZeroAmount } from './tokenMath'
 
 /** Display-only money label. Not used for transaction amounts. */
 export function formatMoneyLabel(value: bigint, decimals: number): string {
-  const raw = formatUnits(value, decimals)
+  const raw = ensureLeadingZeroAmount(formatUnits(value, decimals))
   const negative = raw.startsWith('-')
   const unsigned = negative ? raw.slice(1) : raw
   const [whole, fraction = ''] = unsigned.split('.')
@@ -17,11 +18,11 @@ export function formatMoneyLabel(value: bigint, decimals: number): string {
       : trimmedFrac.length <= 2
         ? `${whole}.${trimmedFrac}`
         : `${whole}.${trimmedFrac.slice(0, 6).replace(/0+$/, '') || '00'}`
-  return `${negative ? '-' : ''}$${shown}`
+  return `${negative ? '-' : ''}${shown}`
 }
 
 export function formatUsdtPlain(value: bigint, decimals: number): string {
-  return formatUnits(value, decimals)
+  return ensureLeadingZeroAmount(formatUnits(value, decimals))
 }
 
 export function progressRatio(buyerCount: bigint, goal: bigint): number {
@@ -71,15 +72,15 @@ export function homeStatusLabel(
   return 'Unknown'
 }
 
-/** Display-only compact money for Home rows, e.g. $5 or $0.10 */
+/** Display-only compact amount for Home rows, e.g. 5 or 0.10 (token label added by UI). */
 export function formatHomeAmount(value: bigint, decimals: number): string {
-  const raw = formatUnits(value, decimals)
+  const raw = ensureLeadingZeroAmount(formatUnits(value, decimals))
   const negative = raw.startsWith('-')
   const unsigned = negative ? raw.slice(1) : raw
   const [whole, fraction = ''] = unsigned.split('.')
   const trimmedFrac = fraction.replace(/0+$/, '')
   const shown = trimmedFrac.length === 0 ? whole : `${whole}.${trimmedFrac}`
-  return `${negative ? '-' : ''}$${shown}`
+  return `${negative ? '-' : ''}${shown}`
 }
 
 export const MAX_PARTICIPANT_DOTS = 20
@@ -132,5 +133,5 @@ export function formatRemainingShort(deadlineSec: bigint | number, nowSec: numbe
 }
 
 export function approvalCapLabel(): string {
-  return `$${REUSABLE_ALLOWANCE_TOKENS}`
+  return String(REUSABLE_ALLOWANCE_TOKENS)
 }

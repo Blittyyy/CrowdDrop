@@ -67,6 +67,7 @@ import {
 } from './walletSession'
 import { getCachedProductByDrop } from './products/productCache'
 import type { PublicProductMetadata } from './products/finalizeClient'
+import { requestProductUnlock } from './products/unlockClient'
 
 const props = defineProps<{
   dropParam: string
@@ -94,6 +95,11 @@ const refreshing = ref(false)
 const participantReloadToken = ref(0)
 const drop = ref<DropData | null>(null)
 const productMeta = ref<PublicProductMetadata | null>(null)
+const unlockBusy = ref(false)
+const unlockError = ref<string | null>(null)
+const unlockCancelled = ref(false)
+const readyDownloadUrl = ref<string | null>(null)
+const readyDownloadExpiresAt = ref<number>(0)
 const statusLabel = ref<DropStatusLabel | 'Unknown' | null>(null)
 const deposit = ref<bigint>(0n)
 const tokenBalance = ref<bigint>(0n)
@@ -323,6 +329,22 @@ const showExpiredWithdraw = computed(() =>
   && walletOnActiveNetwork.value
   && !walletChecking.value
   && canWithdraw.value,
+)
+
+/** Eligible buyer for product unlock (frontend hint only — server re-verifies). */
+const canUnlockProduct = computed(() =>
+  Boolean(productMeta.value)
+  && Boolean(drop.value)
+  && !isSeller.value
+  && hasDeposit.value
+  && personalReady.value
+  && Boolean(walletAccount.value)
+  && walletOnActiveNetwork.value
+  && (visibleStatusLabel.value === 'Successful' || showStaticClaimedUi.value),
+)
+
+const downloadUrlStillValid = computed(() =>
+  Boolean(readyDownloadUrl.value) && readyDownloadExpiresAt.value > Date.now() + 5_000,
 )
 
 const sellerCopied = ref(false)
@@ -1014,7 +1036,57 @@ watch(dropId, () => {
   resetMotionUiState()
   stopActivePolling()
   productMeta.value = null
+  readyDownloadUrl.value = null
+  readyDownloadExpiresAt.value = 0
+  unlockError.value = null
+  unlockCancelled.value = false
 })
+
+async function unlockProduct() {
+  unlockError.value = null
+  unlockCancelled.value = false
+
+  if (downloadUrlStillValid.value && readyDownloadUrl.value) {
+    window.open(readyDownloadUrl.value, '_blank', 'noopener,noreferrer')
+    return
+  }
+
+  if (!walletAccount.value || !dropId.value) {
+    unlockError.value = 'Connect your wallet to unlock this product.'
+    return
+  }
+  const provider = window.ethereum
+  if (!provider) {
+    unlockError.value = 'Open this app inside Nimiq Pay to unlock.'
+    return
+  }
+
+  unlockBusy.value = true
+  try {
+    const result = await requestProductUnlock({
+      wallet: walletAccount.value,
+      dropId: dropId.value.toString(),
+      provider,
+    })
+    if (result.ok === false) {
+      if (result.cancelled) {
+        unlockCancelled.value = true
+        return
+      }
+      unlockError.value = result.reason
+      return
+    }
+    readyDownloadUrl.value = result.downloadUrl
+    readyDownloadExpiresAt.value = Date.now() + result.expiresIn * 1000
+    window.open(result.downloadUrl, '_blank', 'noopener,noreferrer')
+  }
+  catch (error) {
+    unlockError.value = friendlyUserError(error)
+  }
+  finally {
+    unlockBusy.value = false
+  }
+}
 
 watch(statusLabel, () => {
   syncActivePolling()
@@ -1044,7 +1116,7 @@ onUnmounted(() => {
   <section class="drop-view utility">
     <header class="app-head">
       <p class="brand">CrowdDrop</p>
-      <WalletBar compact utility :extra-busy="busy" />
+      <WalletBar compact utility :extra-busy="busy || unlockBusy" />
     </header>
 
     <div class="nav">
@@ -1166,6 +1238,9 @@ onUnmounted(() => {
             <p class="joined-copy">
               Your {{ depositPlain }} {{ tokenLabel }} is pooled and waiting on the rest.
             </p>
+            <p v-if="productMeta" class="joined-copy">
+              Your product unlocks when the Drop reaches its goal.
+            </p>
           </div>
           <button
             v-if="showJoinedWithdraw"
@@ -1230,15 +1305,43 @@ onUnmounted(() => {
             {{ claimingInFlight ? 'Claiming…' : `Claim ${escrowedPlain} ${tokenLabel}` }}
           </button>
         </template>
+        <template v-else-if="canUnlockProduct">
+          <p class="note product-ready">Product ready</p>
+          <button
+            type="button"
+            class="primary success"
+            :disabled="busy || unlockBusy"
+            @click="unlockProduct"
+          >
+            {{ unlockBusy ? 'Unlocking…' : (downloadUrlStillValid ? 'Download Product' : 'Unlock Product') }}
+          </button>
+          <p v-if="unlockCancelled" class="help">Unlock cancelled.</p>
+          <p v-else-if="unlockError" class="error">{{ unlockError }}</p>
+          <p class="help">The seller can claim the pooled funds separately.</p>
+        </template>
         <p v-else-if="hasDeposit" class="note">
           You joined this Drop. The seller can now claim the pooled funds.
         </p>
+        <p v-else-if="productMeta" class="note muted">Available to participating buyers.</p>
         <p v-else class="note">The goal was reached.</p>
       </template>
 
       <!-- Claimed -->
       <template v-else-if="showStaticClaimedUi">
-        <p class="note">The seller has claimed the pooled funds.</p>
+        <template v-if="canUnlockProduct">
+          <p class="note product-ready">Product ready</p>
+          <button
+            type="button"
+            class="primary success"
+            :disabled="busy || unlockBusy"
+            @click="unlockProduct"
+          >
+            {{ unlockBusy ? 'Unlocking…' : (downloadUrlStillValid ? 'Download Product' : 'Unlock Product') }}
+          </button>
+          <p v-if="unlockCancelled" class="help">Unlock cancelled.</p>
+          <p v-else-if="unlockError" class="error">{{ unlockError }}</p>
+        </template>
+        <p v-else class="note">The seller has claimed the pooled funds.</p>
         <button type="button" class="text-action" @click="goBackOrHome">Back to Home</button>
       </template>
 
@@ -1355,6 +1458,13 @@ onUnmounted(() => {
   line-height: 1.45;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+.product-ready {
+  font-weight: 600;
+  color: #1F7A45;
+}
+.note.muted {
+  color: #6A6A6A;
 }
 .amount {
   margin: 0 0 12px;

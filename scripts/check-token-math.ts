@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { parseTokenAmount, formatTokenAmount, dropClaimedTotalUnits } from '../src/tokenMath.ts'
+import { parseTokenAmount, formatTokenAmount, dropClaimedTotalUnits, ensureLeadingZeroAmount } from '../src/tokenMath.ts'
 import { STABLECOIN_DECIMALS } from '../src/escrowConfig.ts'
 
 assert.equal(STABLECOIN_DECIMALS, 6)
@@ -17,6 +17,8 @@ assert.equal(parseTokenAmount('.10', 6), 100_000n)
 assert.equal(parseTokenAmount('0,10', 6), 100_000n)
 
 assert.equal(formatTokenAmount(100_000n, 6), '0.1')
+assert.equal(formatTokenAmount(10n, 6), '0.00001')
+assert.equal(ensureLeadingZeroAmount('.00001'), '0.00001')
 
 function rejects(input: string, decimals = 6) {
   assert.throws(() => parseTokenAmount(input, decimals), Error)
@@ -56,4 +58,4 @@ for (const [input, expected] of cases) {
   passed++
 }
 
-console.log(`tokenMath: ${passed + 24} checks passed (includes 0.10 USDT → 100000)`)
+console.log(`tokenMath: ${passed + 27} checks passed (includes 0.10 USDT → 100000)`)

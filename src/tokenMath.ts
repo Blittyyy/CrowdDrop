@@ -3,6 +3,21 @@ import { formatUnits } from 'viem'
 const INVALID_AMOUNT = 'Enter a valid token amount, such as 0.10, 5, or 10.5.'
 
 /**
+ * Ensure display strings never start with a bare decimal point.
+ * Keeps bigint-based formatting — string hygiene only.
+ */
+export function ensureLeadingZeroAmount(display: string): string {
+  const trimmed = display.trim()
+  if (!trimmed)
+    return trimmed
+  if (trimmed.startsWith('.'))
+    return `0${trimmed}`
+  if (trimmed.startsWith('-.'))
+    return `-0${trimmed.slice(1)}`
+  return trimmed
+}
+
+/**
  * Parse a human token amount into base units using exact bigint math.
  * Accepts values below 1 (e.g. 0.10 USDT → 100000 with 6 decimals).
  * Does not use floating-point arithmetic for the amount.
@@ -46,7 +61,7 @@ export function parseTokenAmount(input: string, decimals: number): bigint {
 }
 
 export function formatTokenAmount(value: bigint, decimals: number): string {
-  return formatUnits(value, decimals)
+  return ensureLeadingZeroAmount(formatUnits(value, decimals))
 }
 
 /** Total paid on claim: contribution × goal (exact base units). */

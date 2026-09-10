@@ -4,6 +4,7 @@ import {
   AUTH_CHALLENGE_TTL_SECONDS,
   POLYGON_CHAIN_ID,
   POLYGON_CROWDDROP_ADDRESS,
+  PRODUCT_DOWNLOAD_ACTION,
   SELLER_UPLOAD_ACTION,
 } from './crowdDropConstants.js'
 import { normalizeWallet } from './productFoundation.js'
@@ -15,6 +16,7 @@ export type StoredAuthChallenge = {
   action: string
   chainId: number
   verifyingContract: string
+  dropId?: number | null
 }
 
 export function createChallengeNonce(): string {
@@ -25,7 +27,7 @@ export function challengeExpiresAtSeconds(nowMs = Date.now()): number {
   return Math.floor(nowMs / 1000) + AUTH_CHALLENGE_TTL_SECONDS
 }
 
-export function challengePolicyFields(): {
+export function challengePolicyFields(action: string = SELLER_UPLOAD_ACTION): {
   chainId: number
   verifyingContract: string
   action: string
@@ -33,25 +35,41 @@ export function challengePolicyFields(): {
   return {
     chainId: POLYGON_CHAIN_ID,
     verifyingContract: POLYGON_CROWDDROP_ADDRESS,
-    action: SELLER_UPLOAD_ACTION,
+    action,
   }
 }
 
 export async function insertAuthChallenge(
   client: SupabaseClient,
-  params: { wallet: string, nonce: string, expiresAtSeconds: number },
+  params: {
+    wallet: string
+    nonce: string
+    expiresAtSeconds: number
+    action?: string
+    dropId?: number | null
+  },
 ): Promise<{ ok: true } | { ok: false, reason: string }> {
   const wallet = normalizeWallet(params.wallet)
+  const action = params.action ?? SELLER_UPLOAD_ACTION
   const expiresAt = new Date(params.expiresAtSeconds * 1000).toISOString()
 
-  const { error } = await client.from('auth_challenges').insert({
+  if (action === PRODUCT_DOWNLOAD_ACTION) {
+    if (params.dropId === undefined || params.dropId === null || !Number.isInteger(params.dropId) || params.dropId <= 0)
+      return { ok: false, reason: 'dropId is required for product download.' }
+  }
+
+  const row: Record<string, unknown> = {
     nonce: params.nonce,
     wallet,
-    action: SELLER_UPLOAD_ACTION,
+    action,
     chain_id: POLYGON_CHAIN_ID,
     contract_address: POLYGON_CROWDDROP_ADDRESS.toLowerCase(),
     expires_at: expiresAt,
-  })
+  }
+  if (action === PRODUCT_DOWNLOAD_ACTION)
+    row.drop_id = params.dropId
+
+  const { error } = await client.from('auth_challenges').insert(row)
 
   if (error)
     return { ok: false, reason: error.message }
@@ -65,17 +83,28 @@ export async function consumeAuthChallenge(
     nonce: string
     wallet: string
     action: string
+    dropId?: number | null
     nowMs?: number
   },
 ): Promise<{ ok: true } | { ok: false, reason: string }> {
   const wallet = normalizeWallet(params.wallet)
   const nowIso = new Date(params.nowMs ?? Date.now()).toISOString()
 
-  const { data, error } = await client.from('auth_challenges')
+  let query = client.from('auth_challenges')
     .update({ used_at: nowIso })
     .eq('nonce', params.nonce)
+    .eq('wallet', wallet)
+    .eq('action', params.action)
     .is('used_at', null)
-    .select('wallet, action, chain_id, contract_address, expires_at')
+
+  if (params.action === PRODUCT_DOWNLOAD_ACTION) {
+    if (params.dropId === undefined || params.dropId === null)
+      return { ok: false, reason: 'dropId is required for product download.' }
+    query = query.eq('drop_id', params.dropId)
+  }
+
+  const { data, error } = await query
+    .select('wallet, action, chain_id, contract_address, expires_at, drop_id')
     .maybeSingle()
 
   if (error)
@@ -91,8 +120,13 @@ export async function consumeAuthChallenge(
     return { ok: false, reason: 'Challenge chain mismatch.' }
   if (data.contract_address !== POLYGON_CROWDDROP_ADDRESS.toLowerCase())
     return { ok: false, reason: 'Challenge contract mismatch.' }
-  if (new Date(data.expires_at).getTime() < Date.now())
+  if (new Date(data.expires_at).getTime() < (params.nowMs ?? Date.now()))
     return { ok: false, reason: 'Challenge expired.' }
+
+  if (params.action === PRODUCT_DOWNLOAD_ACTION) {
+    if (Number(data.drop_id) !== Number(params.dropId))
+      return { ok: false, reason: 'Challenge drop mismatch.' }
+  }
 
   return { ok: true }
 }

@@ -7,6 +7,8 @@ export const PRODUCT_DOWNLOAD_ACTION = 'product_download'
 
 export const AUTH_CHALLENGE_TTL_SECONDS = 5 * 60
 export const SELLER_SESSION_TTL_SECONDS = 30 * 60
+/** Short-lived private asset download URL (seconds). */
+export const PRODUCT_DOWNLOAD_URL_TTL_SECONDS = 5 * 60
 
 /** Digital Products V1 upload limits (server-authoritative). */
 export const MAX_COVER_BYTES = 2 * 1024 * 1024

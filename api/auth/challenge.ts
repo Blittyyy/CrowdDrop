@@ -22,6 +22,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
 
     const wallet = 'wallet' in body ? String((body as { wallet?: unknown }).wallet ?? '') : ''
     const action = 'action' in body ? String((body as { action?: unknown }).action ?? '') : ''
+    const dropIdRaw = 'dropId' in body ? (body as { dropId?: unknown }).dropId : undefined
 
     const {
       challengeExpiresAtSeconds,
@@ -29,10 +30,14 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       createChallengeNonce,
       insertAuthChallenge,
     } = await import('../../server/authChallengeStore.js')
-    const { SELLER_UPLOAD_ACTION } = await import('../../server/crowdDropConstants.js')
+    const {
+      PRODUCT_DOWNLOAD_ACTION,
+      SELLER_UPLOAD_ACTION,
+    } = await import('../../server/crowdDropConstants.js')
     const { normalizeWallet, isValidAuthChallengeAction } = await import('../../server/productFoundation.js')
 
-    if (action !== SELLER_UPLOAD_ACTION || !isValidAuthChallengeAction(action)) {
+    if (!isValidAuthChallengeAction(action)
+      || (action !== SELLER_UPLOAD_ACTION && action !== PRODUCT_DOWNLOAD_ACTION)) {
       res.statusCode = 400
       res.end(JSON.stringify({ ok: false, reason: 'Unsupported action.' }))
       return
@@ -48,9 +53,22 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       return
     }
 
+    let dropId: number | null = null
+    if (action === PRODUCT_DOWNLOAD_ACTION) {
+      const parsed = typeof dropIdRaw === 'number'
+        ? dropIdRaw
+        : Number.parseInt(String(dropIdRaw ?? ''), 10)
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        res.statusCode = 400
+        res.end(JSON.stringify({ ok: false, reason: 'dropId is required for product download.' }))
+        return
+      }
+      dropId = parsed
+    }
+
     const nonce = createChallengeNonce()
     const expiresAt = challengeExpiresAtSeconds()
-    const policy = challengePolicyFields()
+    const policy = challengePolicyFields(action)
 
     const url = process.env.SUPABASE_URL?.trim()
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -69,6 +87,8 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       wallet: normalizedWallet,
       nonce,
       expiresAtSeconds: expiresAt,
+      action,
+      dropId,
     })
     if (stored.ok === false) {
       res.statusCode = 500
@@ -83,6 +103,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
       expiresAt,
       wallet: normalizedWallet,
       ...policy,
+      ...(dropId !== null ? { dropId } : {}),
     }))
   }
   catch (error) {

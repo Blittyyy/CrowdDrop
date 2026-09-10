@@ -1,4 +1,4 @@
-/** Minimal CrowdDrop ABI for server-side finalize verification (Polygon). */
+/** Minimal CrowdDrop ABI for server-side finalize / unlock verification (Polygon). */
 export const crowdDropServerAbi = [
   {
     type: 'function',
@@ -22,6 +22,23 @@ export const crowdDropServerAbi = [
     stateMutability: 'view',
   },
   {
+    type: 'function',
+    name: 'statusOf',
+    inputs: [{ name: 'dropId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'depositOf',
+    inputs: [
+      { name: 'dropId', type: 'uint256' },
+      { name: 'buyer', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
     type: 'event',
     name: 'DropCreated',
     inputs: [
@@ -36,3 +53,11 @@ export const crowdDropServerAbi = [
 
 export const CROWDDROP_MIN_GOAL = 2
 export const CROWDDROP_MAX_GOAL = 1000
+
+/** Mirrors DROP_STATUS_LABELS on the frontend: Active, Successful, Expired, Claimed */
+export const DROP_STATUS = {
+  Active: 0,
+  Successful: 1,
+  Expired: 2,
+  Claimed: 3,
+} as const

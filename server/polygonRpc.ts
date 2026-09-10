@@ -164,6 +164,43 @@ export function assertValidOnChainDrop(
     throw new Error('On-chain deadline is invalid.')
 }
 
+export async function readDropStatus(
+  dropId: bigint,
+  options: {
+    client?: ReturnType<typeof createPolygonPublicClient>
+    contractAddress?: `0x${string}`
+  } = {},
+): Promise<number> {
+  const client = options.client ?? createPolygonPublicClient()
+  const address = options.contractAddress ?? POLYGON_CROWDDROP_ADDRESS
+  const status = await (client.readContract as (args: unknown) => Promise<number | bigint>)({
+    address,
+    abi: crowdDropServerAbi,
+    functionName: 'statusOf',
+    args: [dropId],
+  })
+  return Number(status)
+}
+
+export async function readDepositOf(
+  dropId: bigint,
+  buyer: `0x${string}`,
+  options: {
+    client?: ReturnType<typeof createPolygonPublicClient>
+    contractAddress?: `0x${string}`
+  } = {},
+): Promise<bigint> {
+  const client = options.client ?? createPolygonPublicClient()
+  const address = options.contractAddress ?? POLYGON_CROWDDROP_ADDRESS
+  const deposit = await (client.readContract as (args: unknown) => Promise<bigint>)({
+    address,
+    abi: crowdDropServerAbi,
+    functionName: 'depositOf',
+    args: [dropId, buyer],
+  })
+  return deposit
+}
+
 export async function fetchSuccessfulCreateReceipt(
   txHash: Hex,
   options: {

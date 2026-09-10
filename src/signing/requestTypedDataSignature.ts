@@ -3,6 +3,7 @@ import {
   serializeProviderTypedData,
   toProviderTypedDataPayload,
   type CrowdDropAuthTypedData,
+  type CrowdDropProductDownloadTypedData,
 } from './crowdDropAuthTypedData'
 
 /** User dismissed / cancelled a wallet signing confirmation. */
@@ -23,7 +24,7 @@ const SIGNATURE_RE = /^0x[a-fA-F0-9]+$/
 export async function requestSignTypedDataV4(
   provider: EthereumProvider,
   address: string,
-  typedData: CrowdDropAuthTypedData,
+  typedData: CrowdDropAuthTypedData | CrowdDropProductDownloadTypedData,
 ): Promise<`0x${string}`> {
   const payload = toProviderTypedDataPayload(typedData)
 
