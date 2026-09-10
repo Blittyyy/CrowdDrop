@@ -62,20 +62,29 @@ function onCompactAction() {
       wrong: !!walletAccount && !walletOnActiveNetwork,
     }"
   >
-    <div v-if="compact" class="compact-row">
-      <span class="meta">{{ compactMeta }}</span>
-      <button
-        v-if="compactAction"
-        type="button"
-        class="ghost"
-        :disabled="walletBusy || extraBusy"
-        @click="onCompactAction"
-      >
-        {{ walletBusy ? 'Connecting…' : compactAction }}
-      </button>
-    </div>
-    <p v-if="compact && utility && walletBusy && walletStatus" class="utility-wait">{{ walletStatus }}</p>
-    <p v-if="compact && utility && walletError" class="utility-error">{{ walletError }}</p>
+    <template v-if="compact">
+      <div class="compact-row">
+        <span class="meta">{{ compactMeta }}</span>
+        <button
+          v-if="compactAction"
+          type="button"
+          class="ghost"
+          :disabled="walletBusy || extraBusy"
+          @click="onCompactAction"
+        >
+          {{ walletBusy ? 'Connecting…' : compactAction }}
+        </button>
+      </div>
+      <p v-if="utility && walletBusy && walletStatus" class="utility-wait">{{ walletStatus }}</p>
+      <p v-if="utility && walletError" class="utility-error">{{ walletError }}</p>
+      <p v-if="!utility && walletError" class="error">{{ walletError }}</p>
+      <p v-if="!utility && walletAccount && !walletOnActiveNetwork" class="warn">
+        Wrong network — switch to {{ network.chainName }}.
+      </p>
+      <p v-if="!utility && walletBusy && walletStatus && !walletChecking && !walletReady" class="wait">
+        {{ walletStatus }}
+      </p>
+    </template>
 
     <template v-else>
       <p v-if="walletChecking" class="wait">Checking wallet…</p>
@@ -116,14 +125,6 @@ function onCompactAction() {
         </button>
       </div>
     </template>
-
-    <p v-if="compact && !utility && walletError" class="error">{{ walletError }}</p>
-    <p v-if="compact && !utility && walletAccount && !walletOnActiveNetwork" class="warn">
-      Wrong network — switch to {{ network.chainName }}.
-    </p>
-    <p v-if="compact && !utility && walletBusy && walletStatus && !walletChecking && !walletReady" class="wait">
-      {{ walletStatus }}
-    </p>
   </div>
 </template>
 
