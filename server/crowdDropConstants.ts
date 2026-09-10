@@ -27,6 +27,10 @@ export const PRODUCT_COVER_BUCKET = 'product-covers'
 export const PRODUCT_ASSET_BUCKET = 'product-assets'
 
 export const SESSION_COOKIE_NAME = 'crowddrop_seller_upload'
+/** HttpOnly buyer product-download access (scoped per Drop). */
+export const BUYER_ACCESS_COOKIE_NAME = 'crowddrop_buyer_access'
+/** Purchaser access session lifetime — re-sign only after this expires. */
+export const BUYER_ACCESS_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 
 export const TITLE_MAX_LENGTH = 80
 export const DESCRIPTION_MAX_LENGTH = 500

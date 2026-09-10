@@ -67,7 +67,7 @@ import {
 } from './walletSession'
 import { getCachedProductByDrop } from './products/productCache'
 import type { PublicProductMetadata } from './products/finalizeClient'
-import { requestProductUnlock } from './products/unlockClient'
+import { requestProductUnlock, restoreProductUnlock } from './products/unlockClient'
 
 const props = defineProps<{
   dropParam: string
@@ -96,10 +96,13 @@ const participantReloadToken = ref(0)
 const drop = ref<DropData | null>(null)
 const productMeta = ref<PublicProductMetadata | null>(null)
 const unlockBusy = ref(false)
+const unlockQuietBusy = ref(false)
 const unlockError = ref<string | null>(null)
 const unlockCancelled = ref(false)
 const readyDownloadUrl = ref<string | null>(null)
 const readyDownloadExpiresAt = ref<number>(0)
+/** True after a successful session restore or signed unlock for this Drop + wallet. */
+const buyerAccessReady = ref(false)
 const statusLabel = ref<DropStatusLabel | 'Unknown' | null>(null)
 const deposit = ref<bigint>(0n)
 const tokenBalance = ref<bigint>(0n)
@@ -346,6 +349,25 @@ const canUnlockProduct = computed(() =>
 const downloadUrlStillValid = computed(() =>
   Boolean(readyDownloadUrl.value) && readyDownloadExpiresAt.value > Date.now() + 5_000,
 )
+
+const showDownloadProduct = computed(() =>
+  downloadUrlStillValid.value || buyerAccessReady.value,
+)
+
+function clearUnlockDownloadState() {
+  readyDownloadUrl.value = null
+  readyDownloadExpiresAt.value = 0
+  buyerAccessReady.value = false
+}
+
+function applyUnlockSuccess(result: {
+  downloadUrl: string
+  expiresIn: number
+}) {
+  readyDownloadUrl.value = result.downloadUrl
+  readyDownloadExpiresAt.value = Date.now() + result.expiresIn * 1000
+  buyerAccessReady.value = true
+}
 
 const sellerCopied = ref(false)
 const shareFeedback = ref<string | null>(null)
@@ -1036,11 +1058,50 @@ watch(dropId, () => {
   resetMotionUiState()
   stopActivePolling()
   productMeta.value = null
-  readyDownloadUrl.value = null
-  readyDownloadExpiresAt.value = 0
+  clearUnlockDownloadState()
   unlockError.value = null
   unlockCancelled.value = false
 })
+
+async function tryRestoreBuyerAccess(options: { openDownload?: boolean } = {}): Promise<boolean> {
+  if (!walletAccount.value || !dropId.value || !canUnlockProduct.value)
+    return false
+  if (downloadUrlStillValid.value) {
+    if (options.openDownload && readyDownloadUrl.value)
+      window.open(readyDownloadUrl.value, '_blank', 'noopener,noreferrer')
+    return true
+  }
+
+  const result = await restoreProductUnlock({
+    dropId: dropId.value.toString(),
+    connectedWallet: walletAccount.value,
+  })
+  if (result.ok === false) {
+    if (!result.cancelled && result.authRequired)
+      buyerAccessReady.value = false
+    return false
+  }
+  applyUnlockSuccess(result)
+  if (options.openDownload)
+    window.open(result.downloadUrl, '_blank', 'noopener,noreferrer')
+  return true
+}
+
+async function quietRestoreBuyerAccess() {
+  if (!canUnlockProduct.value || unlockBusy.value || unlockQuietBusy.value)
+    return
+  if (downloadUrlStillValid.value) {
+    buyerAccessReady.value = true
+    return
+  }
+  unlockQuietBusy.value = true
+  try {
+    await tryRestoreBuyerAccess()
+  }
+  finally {
+    unlockQuietBusy.value = false
+  }
+}
 
 async function unlockProduct() {
   unlockError.value = null
@@ -1063,6 +1124,11 @@ async function unlockProduct() {
 
   unlockBusy.value = true
   try {
+    // Prefer session cookie refresh — no EIP-712 when access session is still valid.
+    const restored = await tryRestoreBuyerAccess({ openDownload: true })
+    if (restored)
+      return
+
     const result = await requestProductUnlock({
       wallet: walletAccount.value,
       dropId: dropId.value.toString(),
@@ -1076,8 +1142,7 @@ async function unlockProduct() {
       unlockError.value = result.reason
       return
     }
-    readyDownloadUrl.value = result.downloadUrl
-    readyDownloadExpiresAt.value = Date.now() + result.expiresIn * 1000
+    applyUnlockSuccess(result)
     window.open(result.downloadUrl, '_blank', 'noopener,noreferrer')
   }
   catch (error) {
@@ -1087,6 +1152,18 @@ async function unlockProduct() {
     unlockBusy.value = false
   }
 }
+
+watch(
+  [canUnlockProduct, walletAccount, dropId],
+  ([eligible, wallet]) => {
+    if (!eligible || !wallet) {
+      clearUnlockDownloadState()
+      unlockError.value = null
+      return
+    }
+    void quietRestoreBuyerAccess()
+  },
+)
 
 watch(statusLabel, () => {
   syncActivePolling()
@@ -1313,7 +1390,7 @@ onUnmounted(() => {
             :disabled="busy || unlockBusy"
             @click="unlockProduct"
           >
-            {{ unlockBusy ? 'Unlocking…' : (downloadUrlStillValid ? 'Download Product' : 'Unlock Product') }}
+            {{ unlockBusy ? 'Unlocking…' : (showDownloadProduct ? 'Download Product' : 'Unlock Product') }}
           </button>
           <p v-if="unlockCancelled" class="help">Unlock cancelled.</p>
           <p v-else-if="unlockError" class="error">{{ unlockError }}</p>
@@ -1336,7 +1413,7 @@ onUnmounted(() => {
             :disabled="busy || unlockBusy"
             @click="unlockProduct"
           >
-            {{ unlockBusy ? 'Unlocking…' : (downloadUrlStillValid ? 'Download Product' : 'Unlock Product') }}
+            {{ unlockBusy ? 'Unlocking…' : (showDownloadProduct ? 'Download Product' : 'Unlock Product') }}
           </button>
           <p v-if="unlockCancelled" class="help">Unlock cancelled.</p>
           <p v-else-if="unlockError" class="error">{{ unlockError }}</p>

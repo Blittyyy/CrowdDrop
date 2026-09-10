@@ -1,7 +1,22 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readJsonBody } from '../../server/httpBody.js'
 
-type ApiRequest = IncomingMessage & { method?: string, body?: unknown }
+type ApiRequest = IncomingMessage & {
+  method?: string
+  body?: unknown
+  headers: IncomingMessage['headers']
+}
+
+function parseDropId(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw > 0)
+    return raw
+  if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) {
+    const n = Number(raw.trim())
+    if (Number.isInteger(n) && n > 0)
+      return n
+  }
+  return null
+}
 
 export default async function handler(req: ApiRequest, res: ServerResponse) {
   res.setHeader('Content-Type', 'application/json')
@@ -22,8 +37,24 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
 
     const typedData = 'typedData' in body ? (body as { typedData?: unknown }).typedData : undefined
     const signature = 'signature' in body ? String((body as { signature?: unknown }).signature ?? '') : ''
+    const dropId = parseDropId('dropId' in body ? (body as { dropId?: unknown }).dropId : undefined)
+    const connectedWallet = 'connectedWallet' in body
+      ? String((body as { connectedWallet?: unknown }).connectedWallet ?? '')
+      : ''
 
-    if (!typedData || !signature) {
+    const hasSignatureMode = Boolean(typedData) && Boolean(signature)
+    const hasSessionMode = dropId !== null && !hasSignatureMode
+
+    if (!hasSignatureMode && !hasSessionMode) {
+      res.statusCode = 400
+      res.end(JSON.stringify({
+        ok: false,
+        reason: 'typedData and signature are required, or dropId for session unlock.',
+      }))
+      return
+    }
+
+    if (hasSignatureMode && (!typedData || !signature)) {
       res.statusCode = 400
       res.end(JSON.stringify({ ok: false, reason: 'typedData and signature are required.' }))
       return
@@ -38,16 +69,34 @@ export default async function handler(req: ApiRequest, res: ServerResponse) {
     }
 
     const { createClient } = await import('@supabase/supabase-js')
-    const { unlockProductDownload } = await import('../../server/productUnlock.js')
+    const {
+      unlockProductDownload,
+      unlockProductWithBuyerSession,
+    } = await import('../../server/productUnlock.js')
+    const { buildBuyerAccessCookie } = await import('../../server/buyerAccessSession.js')
     const client = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    const result = await unlockProductDownload(client, { typedData, signature })
+    const result = hasSignatureMode
+      ? await unlockProductDownload(client, { typedData, signature })
+      : await unlockProductWithBuyerSession(client, {
+        dropId: dropId!,
+        cookieHeader: typeof req.headers.cookie === 'string' ? req.headers.cookie : undefined,
+        connectedWallet: connectedWallet || null,
+      })
+
     if (result.ok === false) {
       res.statusCode = result.status ?? 400
       res.end(JSON.stringify({ ok: false, reason: result.reason }))
       return
+    }
+
+    if (result.buyerAccessToken) {
+      res.setHeader(
+        'Set-Cookie',
+        buildBuyerAccessCookie(result.buyerAccessToken, result.buyerAccessMaxAge),
+      )
     }
 
     res.statusCode = 200

@@ -17,8 +17,76 @@ export type UnlockProductResult =
     productTitle: string
   }
   | { ok: false, cancelled: true }
-  | { ok: false, cancelled: false, reason: string }
+  | { ok: false, cancelled: false, reason: string, authRequired?: boolean }
 
+function parseUnlockSuccess(payload: {
+  ok?: boolean
+  reason?: string
+  downloadUrl?: string
+  expiresIn?: number
+  fileTypeLabel?: string | null
+  productTitle?: string
+}, responseOk: boolean): UnlockProductResult {
+  if (!responseOk || payload.ok !== true || typeof payload.downloadUrl !== 'string') {
+    const reason = payload.reason ?? 'Could not unlock product.'
+    return {
+      ok: false,
+      cancelled: false,
+      reason,
+      authRequired: reason === 'buyer_auth_required',
+    }
+  }
+  return {
+    ok: true,
+    downloadUrl: payload.downloadUrl,
+    expiresIn: typeof payload.expiresIn === 'number' ? payload.expiresIn : 300,
+    fileTypeLabel: payload.fileTypeLabel ?? null,
+    productTitle: typeof payload.productTitle === 'string' ? payload.productTitle : '',
+  }
+}
+
+/** Session-mode unlock — no EIP-712. Uses HttpOnly crowddrop_buyer_access cookie. */
+export async function restoreProductUnlock(params: {
+  dropId: string | number
+  connectedWallet: string
+  fetchImpl?: typeof fetch
+}): Promise<UnlockProductResult> {
+  const fetchFn = params.fetchImpl ?? fetch
+  const dropId = Number(params.dropId)
+  if (!Number.isInteger(dropId) || dropId <= 0)
+    return { ok: false, cancelled: false, reason: 'Invalid Drop.', authRequired: true }
+
+  try {
+    const unlockResponse = await fetchFn('/api/products/unlock', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        dropId,
+        connectedWallet: params.connectedWallet,
+      }),
+    })
+    const payload = await unlockResponse.json() as {
+      ok?: boolean
+      reason?: string
+      downloadUrl?: string
+      expiresIn?: number
+      fileTypeLabel?: string | null
+      productTitle?: string
+    }
+    return parseUnlockSuccess(payload, unlockResponse.ok)
+  }
+  catch (error) {
+    return {
+      ok: false,
+      cancelled: false,
+      reason: error instanceof Error ? error.message : 'Could not unlock product.',
+      authRequired: true,
+    }
+  }
+}
+
+/** First-time unlock via EIP-712; sets buyer access session cookie. */
 export async function requestProductUnlock(params: {
   wallet: string
   dropId: string | number
@@ -66,7 +134,7 @@ export async function requestProductUnlock(params: {
 
     const unlockResponse = await fetchFn('/api/products/unlock', {
       method: 'POST',
-      credentials: 'omit',
+      credentials: 'include',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         typedData: providerPayload,
@@ -82,21 +150,7 @@ export async function requestProductUnlock(params: {
       productTitle?: string
     }
 
-    if (!unlockResponse.ok || payload.ok !== true || typeof payload.downloadUrl !== 'string') {
-      return {
-        ok: false,
-        cancelled: false,
-        reason: payload.reason ?? 'Could not unlock product.',
-      }
-    }
-
-    return {
-      ok: true,
-      downloadUrl: payload.downloadUrl,
-      expiresIn: typeof payload.expiresIn === 'number' ? payload.expiresIn : 300,
-      fileTypeLabel: payload.fileTypeLabel ?? null,
-      productTitle: typeof payload.productTitle === 'string' ? payload.productTitle : '',
-    }
+    return parseUnlockSuccess(payload, unlockResponse.ok)
   }
   catch (error) {
     if (error instanceof SignCancelledError)

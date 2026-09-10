@@ -16,8 +16,21 @@ import { DROP_STATUS } from '../server/crowdDropAbi.ts'
 import {
   buyerEntitlementAllowed,
   unlockProductDownload,
+  unlockProductWithBuyerSession,
 } from '../server/productUnlock.ts'
-import { PRODUCT_DOWNLOAD_URL_TTL_SECONDS } from '../server/crowdDropConstants.ts'
+import {
+  BUYER_ACCESS_COOKIE_NAME,
+  BUYER_ACCESS_SESSION_TTL_SECONDS,
+  PRODUCT_DOWNLOAD_URL_TTL_SECONDS,
+} from '../server/crowdDropConstants.ts'
+import {
+  buildBuyerAccessCookie,
+  createBuyerAccessSessionToken,
+  readBuyerAccessSessionFromCookie,
+  verifyBuyerAccessSessionToken,
+} from '../server/buyerAccessSession.ts'
+
+process.env.CROWDDROP_AUTH_SECRET = 'test-secret-for-product-unlock-only'
 
 const buyer = privateKeyToAccount(generatePrivateKey())
 const seller = privateKeyToAccount(generatePrivateKey())
@@ -312,9 +325,153 @@ const chainOk = {
     assert.equal(result.productTitle, 'Guide')
     assert.equal(JSON.stringify(result).includes('asset_path'), false)
     assert.equal(JSON.stringify(result).includes('secret.pdf'), false)
+    assert.ok(result.buyerAccessToken)
+    assert.equal(result.buyerAccessMaxAge, BUYER_ACCESS_SESSION_TTL_SECONDS)
+    const session = verifyBuyerAccessSessionToken(result.buyerAccessToken, {
+      nowSeconds,
+      expectedDropId: 9,
+    })
+    assert.equal(session.ok, true)
+    if (session.ok) {
+      assert.equal(session.payload.wallet, buyer.address.toLowerCase())
+      assert.equal(session.payload.dropId, 9)
+      assert.equal(session.payload.chainId, 137)
+      assert.equal(session.payload.action, PRODUCT_DOWNLOAD_ACTION)
+    }
   }
   assert.equal(state.grants.length, 1)
   assert.equal(state.challenges[0]!.used_at !== null, true)
+}
+
+// Session mode: refresh without signature
+{
+  const session = createBuyerAccessSessionToken(
+    { wallet: buyer.address, dropId: 9 },
+    { nowSeconds },
+  )
+  assert.equal(session.ok, true)
+  if (!session.ok)
+    throw new Error('session required')
+  const cookie = buildBuyerAccessCookie(session.token)
+  assert.match(cookie, new RegExp(`^${BUYER_ACCESS_COOKIE_NAME}=`))
+  assert.match(cookie, /HttpOnly/)
+  assert.match(cookie, /SameSite=Lax/)
+  assert.match(cookie, /Path=\//)
+  assert.doesNotMatch(cookie, /localStorage/)
+
+  const state = { challenges: [] as ChallengeRow[], products: [product], grants: [] as Array<Record<string, unknown>> }
+  const restored = await unlockProductWithBuyerSession(
+    makeClient(state),
+    { dropId: 9, cookieHeader: cookie, connectedWallet: buyer.address },
+    chainOk,
+  )
+  assert.equal(restored.ok, true)
+  if (restored.ok) {
+    assert.equal(restored.expiresIn, 300)
+    assert.equal(JSON.stringify(restored).includes('asset_path'), false)
+  }
+  assert.equal(state.grants.length, 1)
+
+  // Claimed still works via session
+  const claimed = await unlockProductWithBuyerSession(
+    makeClient({ challenges: [], products: [product], grants: [] }),
+    { dropId: 9, cookieHeader: cookie, connectedWallet: buyer.address },
+    {
+      ...chainOk,
+      readStatus: async () => DROP_STATUS.Claimed,
+      readDrop: async () => ({
+        dropId,
+        seller: seller.address as `0x${string}`,
+        contribution,
+        goal: 2n,
+        deadline: 2_000_000_000n,
+        buyerCount: 2n,
+        escrowed: 0n,
+        claimed: true,
+      }),
+    },
+  )
+  assert.equal(claimed.ok, true)
+
+  // Drop B rejected with Drop A session
+  const wrongDrop = await unlockProductWithBuyerSession(
+    makeClient({ challenges: [], products: [{ ...product, drop_id: 10 }], grants: [] }),
+    { dropId: 10, cookieHeader: cookie, connectedWallet: buyer.address },
+    chainOk,
+  )
+  assert.equal(wrongDrop.ok, false)
+  if (wrongDrop.ok === false)
+    assert.equal(wrongDrop.reason, 'buyer_auth_required')
+
+  // Connected wallet mismatch
+  const mismatch = await unlockProductWithBuyerSession(
+    makeClient({ challenges: [], products: [product], grants: [] }),
+    { dropId: 9, cookieHeader: cookie, connectedWallet: other.address },
+    chainOk,
+  )
+  assert.equal(mismatch.ok, false)
+  if (mismatch.ok === false)
+    assert.equal(mismatch.reason, 'buyer_auth_required')
+
+  // Expired session
+  const expiredToken = createBuyerAccessSessionToken(
+    { wallet: buyer.address, dropId: 9 },
+    { nowSeconds: nowSeconds - BUYER_ACCESS_SESSION_TTL_SECONDS - 10 },
+  )
+  assert.equal(expiredToken.ok, true)
+  if (expiredToken.ok) {
+    const expired = await unlockProductWithBuyerSession(
+      makeClient({ challenges: [], products: [product], grants: [] }),
+      { dropId: 9, cookieHeader: buildBuyerAccessCookie(expiredToken.token), connectedWallet: buyer.address },
+      { ...chainOk, nowMs: nowSeconds * 1000 },
+    )
+    assert.equal(expired.ok, false)
+    if (expired.ok === false)
+      assert.equal(expired.reason, 'buyer_auth_required')
+  }
+
+  // Missing cookie
+  const missing = await unlockProductWithBuyerSession(
+    makeClient({ challenges: [], products: [product], grants: [] }),
+    { dropId: 9, cookieHeader: '', connectedWallet: buyer.address },
+    chainOk,
+  )
+  assert.equal(missing.ok, false)
+  if (missing.ok === false)
+    assert.equal(missing.reason, 'buyer_auth_required')
+
+  // Seller wallet session still fails entitlement (deposit path)
+  const sellerSession = createBuyerAccessSessionToken(
+    { wallet: seller.address, dropId: 9 },
+    { nowSeconds },
+  )
+  assert.equal(sellerSession.ok, true)
+  if (sellerSession.ok) {
+    const sellerUnlock = await unlockProductWithBuyerSession(
+      makeClient({ challenges: [], products: [product], grants: [] }),
+      {
+        dropId: 9,
+        cookieHeader: buildBuyerAccessCookie(sellerSession.token),
+        connectedWallet: seller.address,
+      },
+      {
+        ...chainOk,
+        readDeposit: async () => contribution,
+      },
+    )
+    assert.equal(sellerUnlock.ok, false)
+  }
+
+  // deposit 0 rejected
+  const zeroDeposit = await unlockProductWithBuyerSession(
+    makeClient({ challenges: [], products: [product], grants: [] }),
+    { dropId: 9, cookieHeader: cookie, connectedWallet: buyer.address },
+    { ...chainOk, readDeposit: async () => 0n },
+  )
+  assert.equal(zeroDeposit.ok, false)
+
+  const parsed = readBuyerAccessSessionFromCookie(cookie, { nowSeconds, expectedDropId: 9 })
+  assert.equal(parsed.ok, true)
 }
 
 // Nonce reused rejected
@@ -481,8 +638,22 @@ const chainOk = {
   assert.match(viewSrc, /Unlock cancelled/)
   assert.match(viewSrc, /Available to participating buyers/)
   assert.match(viewSrc, /Your product unlocks when the Drop reaches its goal/)
+  assert.match(viewSrc, /restoreProductUnlock|quietRestoreBuyerAccess|tryRestoreBuyerAccess/)
+  assert.match(viewSrc, /buyerAccessReady/)
   assert.doesNotMatch(viewSrc, /asset_path/)
   assert.doesNotMatch(viewSrc, /SUPABASE_SERVICE_ROLE/)
+  assert.doesNotMatch(viewSrc, /localStorage.*downloadUrl|sessionStorage.*downloadUrl/)
+
+  const clientSrc = readFileSync(join('src', 'products', 'unlockClient.ts'), 'utf8')
+  assert.match(clientSrc, /credentials: 'include'/)
+  assert.match(clientSrc, /restoreProductUnlock/)
+  assert.match(clientSrc, /buyer_auth_required/)
+  assert.doesNotMatch(clientSrc, /localStorage/)
+
+  const unlockApi = readFileSync(join('api', 'products', 'unlock.ts'), 'utf8')
+  assert.match(unlockApi, /unlockProductWithBuyerSession/)
+  assert.match(unlockApi, /buildBuyerAccessCookie/)
+  assert.match(unlockApi, /Set-Cookie/)
 
   const createSrc = readFileSync(join('src', 'CrowdDropCreate.vue'), 'utf8')
   assert.match(createSrc, /contributionDisplay|ensureLeadingZeroAmount/)
