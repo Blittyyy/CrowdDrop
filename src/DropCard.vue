@@ -4,6 +4,7 @@ import { activeCrowdDropNetwork } from './escrowConfig'
 import type { DropSummary } from './dropCatalog'
 import { openDropById } from './lastOpenedDrop'
 import ParticipantDots from './ParticipantDots.vue'
+import type { PublicProductMetadata } from './products/finalizeClient'
 import {
   formatHomeAmount,
   formatRemainingShort,
@@ -13,6 +14,7 @@ import {
 
 const props = defineProps<{
   summary: DropSummary
+  product?: PublicProductMetadata | null
 }>()
 
 const nowSec = ref(Math.floor(Date.now() / 1000))
@@ -46,6 +48,14 @@ const statusTone = computed(() => {
 const isQuiet = computed(() =>
   props.summary.status === 'Claimed' || props.summary.status === 'Expired',
 )
+const productTitle = computed(() => props.product?.title?.trim() || null)
+const productSub = computed(() => {
+  if (!props.product)
+    return null
+  const file = props.product.fileTypeLabel?.trim()
+  const drop = `Drop #${props.summary.id}`
+  return file ? `${file} · ${drop}` : drop
+})
 
 onMounted(() => {
   timer = setInterval(() => {
@@ -66,22 +76,42 @@ onUnmounted(() => {
     :class="{ quiet: isQuiet }"
     @click="openDropById(summary.id)"
   >
-    <div class="row-top">
-      <p class="lead">
-        {{ amount }} {{ network.tokenSymbol }} · #{{ summary.id }}
-      </p>
-      <p class="status" :class="statusTone">{{ statusText }}</p>
-    </div>
+    <div class="row-main">
+      <img
+        v-if="product?.coverUrl"
+        class="thumb"
+        :src="product.coverUrl"
+        alt=""
+      >
+      <div class="row-copy">
+        <div class="row-top">
+          <div class="lead-wrap">
+            <template v-if="productTitle">
+              <p class="lead product">{{ productTitle }}</p>
+              <p class="sub">{{ productSub }}</p>
+            </template>
+            <p v-else class="lead">
+              {{ amount }} {{ network.tokenSymbol }} · #{{ summary.id }}
+            </p>
+          </div>
+          <p class="status" :class="statusTone">{{ statusText }}</p>
+        </div>
 
-    <ParticipantDots
-      :joined="summary.drop.buyerCount"
-      :goal="summary.drop.goal"
-      :tone="isQuiet && statusTone === 'expired' ? 'expired' : (statusTone === 'success' ? 'success' : (isQuiet ? 'muted' : 'orange'))"
-    />
+        <p v-if="productTitle" class="amount-line">
+          {{ amount }} {{ network.tokenSymbol }} per person
+        </p>
 
-    <div class="row-meta">
-      <span>{{ joinedLine }}</span>
-      <span v-if="remaining">{{ remaining }}</span>
+        <ParticipantDots
+          :joined="summary.drop.buyerCount"
+          :goal="summary.drop.goal"
+          :tone="isQuiet && statusTone === 'expired' ? 'expired' : (statusTone === 'success' ? 'success' : (isQuiet ? 'muted' : 'orange'))"
+        />
+
+        <div class="row-meta">
+          <span>{{ joinedLine }}</span>
+          <span v-if="remaining">{{ remaining }}</span>
+        </div>
+      </div>
     </div>
   </button>
 </template>
@@ -110,21 +140,61 @@ onUnmounted(() => {
 .drop-row.quiet {
   opacity: 0.72;
 }
+.row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+.thumb {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #E2E2DE;
+  margin-top: 1px;
+}
+.row-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
 .row-top {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   width: 100%;
 }
-.lead {
-  margin: 0;
+.lead-wrap {
   flex: 1 1 auto;
   min-width: 0;
+}
+.lead {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #141414;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.lead.product {
+  font-variant-numeric: normal;
+}
+.sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6A6A6A;
+  overflow-wrap: anywhere;
+}
+.amount-line {
+  margin: 0;
+  font-size: 12px;
+  color: #6A6A6A;
   font-variant-numeric: tabular-nums;
 }
 .status {

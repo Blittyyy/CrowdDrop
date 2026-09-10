@@ -20,10 +20,13 @@ import {
   walletChecking,
   walletOnActiveNetwork,
 } from './walletSession'
+import { loadProductsForDropIds } from './products/productCache'
+import type { PublicProductMetadata } from './products/finalizeClient'
 
 const community = ref<DropSummary[]>([])
 const recent = ref<DropSummary[]>([])
 const mine = ref<DropSummary[]>([])
+const productsByDropId = ref<Record<string, PublicProductMetadata>>({})
 const communityStatus = ref<string | null>(null)
 const communityFailed = ref(false)
 const recentStatus = ref<string | null>(null)
@@ -39,6 +42,20 @@ let pollInFlight = false
 
 function visibleSummaries(): DropSummary[] {
   return [...community.value, ...recent.value, ...mine.value]
+}
+
+async function enrichVisibleProducts() {
+  try {
+    const ids = visibleSummaries().map(row => row.id)
+    const map = await loadProductsForDropIds(ids)
+    const next: Record<string, PublicProductMetadata> = { ...productsByDropId.value }
+    for (const [id, product] of map)
+      next[id] = product
+    productsByDropId.value = next
+  }
+  catch {
+    // Missing product metadata is normal for legacy Drops.
+  }
 }
 
 function statusRank(status: DropSummary['status']): number {
@@ -82,6 +99,7 @@ async function loadCommunity() {
       return
     community.value = rows
     communityStatus.value = rows.length === 0 ? 'No active Drops yet.' : null
+    void enrichVisibleProducts()
   }
   catch {
     if (gen !== communityGen)
@@ -124,6 +142,7 @@ async function loadRecent() {
     return
   recent.value = loaded
   recentStatus.value = loaded.length === 0 ? 'No recently viewed Drops.' : null
+  void enrichVisibleProducts()
 }
 
 async function loadMine() {
@@ -150,6 +169,7 @@ async function loadMine() {
       return
     mine.value = rows
     myStatus.value = rows.length === 0 ? 'You haven’t created or joined a Drop yet.' : null
+    void enrichVisibleProducts()
   }
   catch {
     if (gen !== myGen)
@@ -319,7 +339,12 @@ onUnmounted(() => {
       <p v-if="communityStatus" class="empty">{{ communityStatus }}</p>
       <button v-if="communityFailed" type="button" class="retry" @click="loadCommunity">Retry</button>
       <div v-if="communitySorted.length" class="rows">
-        <DropCard v-for="row in communitySorted" :key="'community-' + row.id" :summary="row" />
+        <DropCard
+          v-for="row in communitySorted"
+          :key="'community-' + row.id"
+          :summary="row"
+          :product="productsByDropId[row.id] ?? null"
+        />
       </div>
     </div>
 
@@ -327,7 +352,12 @@ onUnmounted(() => {
       <h2>Your Drops</h2>
       <p v-if="myStatus" class="empty">{{ myStatus }}</p>
       <div v-if="mineSorted.length" class="rows">
-        <DropCard v-for="row in mineSorted" :key="'mine-' + row.id" :summary="row" />
+        <DropCard
+          v-for="row in mineSorted"
+          :key="'mine-' + row.id"
+          :summary="row"
+          :product="productsByDropId[row.id] ?? null"
+        />
       </div>
     </div>
 
@@ -335,7 +365,12 @@ onUnmounted(() => {
       <h2>Recent</h2>
       <p v-if="recentStatus" class="empty">{{ recentStatus }}</p>
       <div v-if="recent.length" class="rows">
-        <DropCard v-for="row in recent" :key="'recent-' + row.id" :summary="row" />
+        <DropCard
+          v-for="row in recent"
+          :key="'recent-' + row.id"
+          :summary="row"
+          :product="productsByDropId[row.id] ?? null"
+        />
       </div>
     </div>
   </section>

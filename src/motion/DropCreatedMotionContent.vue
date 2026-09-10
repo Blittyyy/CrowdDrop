@@ -7,6 +7,9 @@ import { useMotionPlay } from './useMotionPlay'
 const props = defineProps<{
   dropId: string
   goal: number | bigint
+  productTitle?: string
+  coverUrl?: string
+  fileTypeLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +56,17 @@ defineExpose({ play })
       </div>
     </div>
 
+    <div v-if="coverUrl || productTitle" class="product-identity">
+      <img
+        v-if="coverUrl"
+        class="product-cover"
+        :src="coverUrl"
+        alt=""
+      >
+      <p v-if="productTitle" class="product-title">{{ productTitle }}</p>
+      <p v-if="fileTypeLabel" class="product-file">{{ fileTypeLabel }}</p>
+    </div>
+
     <h1 class="motion-title created-heading">Drop #{{ dropId }} created</h1>
 
     <div class="motion-rest">
@@ -64,6 +78,31 @@ defineExpose({ play })
 <style scoped>
 @import './motionDots.css';
 
+.product-identity {
+  margin: 12px 0 0;
+}
+.product-cover {
+  display: block;
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #E2E2DE;
+  margin: 0 0 10px;
+}
+.product-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: #141414;
+  overflow-wrap: anywhere;
+}
+.product-file {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: #6A6A6A;
+}
 .created-heading {
   margin: 16px 0 8px;
   font-size: 22px;

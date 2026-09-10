@@ -23,6 +23,7 @@
     "test:seller-draft": "node --experimental-strip-types --import ./scripts/register-api-import-hook.mjs scripts/check-seller-product-draft.ts",
     "test:direct-upload": "node --experimental-strip-types --import ./scripts/register-api-import-hook.mjs scripts/check-direct-upload.ts",
     "test:finalize": "node --experimental-strip-types --import ./scripts/register-api-import-hook.mjs scripts/check-product-finalize.ts",
+    "test:create-product": "node --experimental-strip-types scripts/check-create-product-flow.ts",
     "compile": "hardhat compile",
     "test:escrow": "hardhat test",
     "deploy:sepolia": "hardhat run scripts/deploy.cjs --network sepolia",

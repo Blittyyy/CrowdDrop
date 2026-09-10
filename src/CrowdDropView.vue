@@ -65,6 +65,8 @@ import {
   walletOnActiveNetwork,
   walletReady,
 } from './walletSession'
+import { getCachedProductByDrop } from './products/productCache'
+import type { PublicProductMetadata } from './products/finalizeClient'
 
 const props = defineProps<{
   dropParam: string
@@ -91,6 +93,7 @@ const refreshError = ref<string | null>(null)
 const refreshing = ref(false)
 const participantReloadToken = ref(0)
 const drop = ref<DropData | null>(null)
+const productMeta = ref<PublicProductMetadata | null>(null)
 const statusLabel = ref<DropStatusLabel | 'Unknown' | null>(null)
 const deposit = ref<bigint>(0n)
 const tokenBalance = ref<bigint>(0n)
@@ -746,6 +749,12 @@ async function loadDrop() {
 
   const id = dropId.value
   dropStatus.value = `Loading Drop ${id.toString()}…`
+  productMeta.value = null
+  void getCachedProductByDrop(id.toString()).then((product) => {
+    if (gen !== loadGeneration)
+      return
+    productMeta.value = product
+  })
 
   // Public Drop payload — public Polygon RPC, no wallet / eth_accounts required.
   try {
@@ -1004,6 +1013,7 @@ watch(walletAccount, () => {
 watch(dropId, () => {
   resetMotionUiState()
   stopActivePolling()
+  productMeta.value = null
 })
 
 watch(statusLabel, () => {
@@ -1063,6 +1073,18 @@ onUnmounted(() => {
     <p v-if="waitingLabel" class="wait">{{ waitingLabel }}</p>
 
     <template v-if="drop">
+      <div v-if="productMeta" class="product-block">
+        <img
+          v-if="productMeta.coverUrl"
+          class="product-cover"
+          :src="productMeta.coverUrl"
+          alt=""
+        >
+        <h2 class="product-title">{{ productMeta.title }}</h2>
+        <p v-if="productMeta.fileTypeLabel" class="product-file">{{ productMeta.fileTypeLabel }}</p>
+        <p class="product-desc">{{ productMeta.description }}</p>
+      </div>
+
       <h1 class="amount">
         <span class="num">{{ contributionHome }}</span>
         <span class="per">{{ tokenLabel }} per person</span>
@@ -1299,6 +1321,41 @@ onUnmounted(() => {
 .nav-status.success { color: #1F7A45; }
 .nav-status.expired { color: #A65A16; }
 
+.product-block {
+  margin: 0 0 14px;
+}
+.product-cover {
+  display: block;
+  width: 100%;
+  max-width: 160px;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #E2E2DE;
+  margin: 0 0 10px;
+}
+.product-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.product-file {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #6A6A6A;
+  font-weight: 500;
+}
+.product-desc {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: #6A6A6A;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .amount {
   margin: 0 0 12px;
   display: flex;
