@@ -1,6 +1,7 @@
 export type AppRoute =
   | { name: 'create' }
   | { name: 'drop', dropParam: string }
+  | { name: 'history' }
   | { name: 'dev' }
   | { name: 'showcase' }
 
@@ -36,6 +37,14 @@ function parseHash(hash: string): { path: string, search: string } {
   return { path: raw ? `/${raw}` : '', search: '' }
 }
 
+function searchFlag(href: string, key: string): boolean {
+  const url = new URL(href, 'http://local.invalid')
+  const hash = parseHash(url.hash)
+  const search = new URLSearchParams(url.search.startsWith('?') ? url.search.slice(1) : url.search)
+  const hashSearch = new URLSearchParams(hash.search.startsWith('?') ? hash.search.slice(1) : hash.search)
+  return search.get(key) === '1' || hashSearch.get(key) === '1'
+}
+
 /** URL-only route. Wallet state must never affect this. */
 export function resolveAppRoute(href: string): AppRoute {
   const url = new URL(href, 'http://local.invalid')
@@ -53,21 +62,25 @@ export function resolveAppRoute(href: string): AppRoute {
   if (drop !== null)
     return { name: 'drop', dropParam: drop }
 
+  if (path === '/history' || hashPath === '/history' || searchFlag(href, 'history'))
+    return { name: 'history' }
+
   return { name: 'create' }
 }
 
 /** Explicit Home/Create (`?home=1`) skips last-opened drop restore. */
 export function wantsHomeScreen(href: string): boolean {
-  const url = new URL(href, 'http://local.invalid')
-  const hash = parseHash(url.hash)
-  const search = new URLSearchParams(url.search.startsWith('?') ? url.search.slice(1) : url.search)
-  const hashSearch = new URLSearchParams(hash.search.startsWith('?') ? hash.search.slice(1) : hash.search)
-  return search.get('home') === '1' || hashSearch.get('home') === '1'
+  return searchFlag(href, 'home')
+}
+
+/** Explicit History (`?history=1` or `/history`) skips last-opened drop restore. */
+export function wantsHistoryScreen(href: string): boolean {
+  return resolveAppRoute(href).name === 'history'
 }
 
 /**
  * Apply last-opened drop only when the URL is Create (`/`) with no `?drop=`.
- * Explicit `?drop=` and `/dev` are never overridden by saved state.
+ * Explicit `?drop=`, History, and `/dev` are never overridden by saved state.
  */
 export function applySavedDrop(route: AppRoute, savedDrop: string | null): AppRoute {
   if (route.name !== 'create')
@@ -90,6 +103,9 @@ export const APP_ROUTE_CASES: Array<{ href: string, route: AppRoute }> = [
   { href: 'https://usecrowddrop.xyz', route: { name: 'create' } },
   { href: 'https://usecrowddrop.xyz/?drop=3', route: { name: 'drop', dropParam: '3' } },
   { href: 'https://usecrowddrop.xyz/?drop=999', route: { name: 'drop', dropParam: '999' } },
+  { href: 'https://usecrowddrop.xyz/?history=1', route: { name: 'history' } },
+  { href: 'https://usecrowddrop.xyz/history', route: { name: 'history' } },
+  { href: 'https://usecrowddrop.xyz/history/', route: { name: 'history' } },
   { href: 'https://usecrowddrop.xyz/dev', route: { name: 'dev' } },
   { href: 'https://usecrowddrop.xyz/dev/', route: { name: 'dev' } },
   { href: 'https://usecrowddrop.xyz/showcase', route: { name: 'showcase' } },

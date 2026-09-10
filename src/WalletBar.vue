@@ -25,6 +25,7 @@ const props = defineProps<{
 }>()
 
 const network = activeCrowdDropNetwork
+const showDevDetails = import.meta.env.DEV
 const walletChainLabel = computed(() => walletChainName.value ?? 'Unknown')
 
 const compactMeta = computed(() => {
@@ -100,7 +101,7 @@ function onCompactAction() {
       </template>
       <p v-if="walletStatus && !walletChecking && !walletReady" class="wait">{{ walletStatus }}</p>
       <p v-if="walletError" class="error">{{ walletError }}</p>
-      <details v-if="walletErrorDetail" class="dev">
+      <details v-if="showDevDetails && walletErrorDetail" class="dev">
         <summary>Developer details</summary>
         <pre>{{ walletErrorDetail }}</pre>
       </details>

@@ -1,7 +1,7 @@
 import { decodeEventLog, encodeEventTopics } from 'viem'
 import { crowdDropAbi, DROP_STATUS_LABELS, type DropStatusLabel } from './crowdDropAbi'
 import { activeCrowdDropNetwork } from './escrowConfig'
-import { decodeCall, ethBlockNumber, ethCall, ethGetLogs } from './evm'
+import { decodeCall, ethBlockNumber, ethCall, ethGetBlockTimestamp, ethGetLogs } from './evm'
 import { isUnknownDropError } from './userErrors'
 import { sameAddress } from './wallet'
 
@@ -20,6 +20,8 @@ export type DropSummary = {
   drop: DropRecord
   status: DropStatusLabel | 'Unknown'
   relation: 'seller' | 'joined' | null
+  /** Connected-wallet deposit when loaded via loadMyDrops. */
+  walletDeposit?: bigint
 }
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -63,7 +65,10 @@ export async function loadDropSummary(id: bigint): Promise<DropSummary | 'missin
   }
 }
 
-function logDropId(log: { data: `0x${string}`, topics: `0x${string}`[] }, eventName: 'DropCreated' | 'Joined'): string | null {
+function logDropId(
+  log: { data: `0x${string}`, topics: `0x${string}`[] },
+  eventName: 'DropCreated' | 'Joined' | 'Claimed',
+): string | null {
   try {
     const parsed = decodeEventLog({
       abi: crowdDropAbi,
@@ -203,6 +208,74 @@ async function fallbackDropIds(account: string): Promise<{ sellerIds: string[], 
   return { sellerIds, joinedIds }
 }
 
+/**
+ * Claimed-event block timestamps (unix seconds) for the given Drop ids.
+ * Single Claimed log scan + deduped eth_getBlockByNumber. Missing / pruned
+ * logs simply omit that id — callers must not invent timestamps.
+ */
+export async function loadClaimTimestampsForDropIds(
+  dropIds: readonly string[],
+): Promise<Map<string, number>> {
+  const wanted = new Set(dropIds.map(String).filter(Boolean))
+  const out = new Map<string, number>()
+  if (wanted.size === 0)
+    return out
+
+  const network = activeCrowdDropNetwork
+  const { start, latest } = await logQueryRange()
+  const topics = encodeEventTopics({
+    abi: crowdDropAbi,
+    eventName: 'Claimed',
+  })
+  let logs: Awaited<ReturnType<typeof ethGetLogs>> = []
+  try {
+    logs = await ethGetLogs({
+      address: network.crowdDropAddress,
+      topics: topics as unknown as readonly (string | null)[],
+      fromBlock: start,
+      toBlock: latest,
+    })
+  }
+  catch {
+    return out
+  }
+
+  const blockByDrop = new Map<string, bigint>()
+  for (const log of logs) {
+    const id = logDropId(log, 'Claimed')
+    if (!id || !wanted.has(id) || !log.blockNumber || blockByDrop.has(id))
+      continue
+    try {
+      blockByDrop.set(id, BigInt(log.blockNumber))
+    }
+    catch {
+      // skip malformed blockNumber
+    }
+  }
+
+  const timestampByBlock = new Map<string, number>()
+  for (const [id, block] of blockByDrop) {
+    const key = block.toString()
+    let ts = timestampByBlock.get(key)
+    if (ts == null) {
+      try {
+        ts = await ethGetBlockTimestamp(block)
+        timestampByBlock.set(key, ts)
+      }
+      catch {
+        continue
+      }
+    }
+    out.set(id, ts)
+  }
+  return out
+}
+
+/**
+ * Wallet-specific Drops: seller of DropCreated, or buyer via Joined.
+ * Buyers who withdrew from Expired/Claimed still appear (History needs them).
+ * Active withdrawers with deposit 0 are excluded.
+ */
 export async function loadMyDrops(account: string): Promise<DropSummary[]> {
   const network = activeCrowdDropNetwork
   let sellerIds: string[] = []
@@ -217,6 +290,7 @@ export async function loadMyDrops(account: string): Promise<DropSummary[]> {
     joinedCandidateIds = fallback.joinedIds
   }
 
+  const joinedCandidateSet = new Set(joinedCandidateIds)
   const unique = newestFirst([...new Set([...sellerIds, ...joinedCandidateIds])])
 
   const summaries: DropSummary[] = []
@@ -225,7 +299,7 @@ export async function loadMyDrops(account: string): Promise<DropSummary[]> {
     if (summary === 'missing')
       continue
     const isSeller = sameAddress(summary.drop.seller, account)
-    let joined = false
+    let deposit = 0n
     if (!isSeller) {
       const depositHex = await ethCall(
         network.crowdDropAddress,
@@ -233,13 +307,17 @@ export async function loadMyDrops(account: string): Promise<DropSummary[]> {
         'depositOf',
         [BigInt(id), account],
       )
-      joined = decodeCall<bigint>(crowdDropAbi, 'depositOf', depositHex) > 0n
+      deposit = decodeCall<bigint>(crowdDropAbi, 'depositOf', depositHex)
     }
-    if (!isSeller && !joined)
+    const activeJoin = deposit > 0n
+    const pastResolvedJoin = joinedCandidateSet.has(id)
+      && (summary.status === 'Expired' || summary.status === 'Claimed')
+    if (!isSeller && !activeJoin && !pastResolvedJoin)
       continue
     summaries.push({
       ...summary,
       relation: isSeller ? 'seller' : 'joined',
+      walletDeposit: deposit,
     })
   }
   return summaries

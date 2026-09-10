@@ -13,6 +13,7 @@ import { formatTokenAmount, dropClaimedTotalUnits } from './tokenMath'
 import { planTokenApproval, reusableApprovalAmount } from './tokenAllowance'
 import {
   developerErrorDetail,
+  friendlyUnlockReason,
   friendlyUserError,
   isTransientReadError,
   isUnknownDropError,
@@ -89,6 +90,7 @@ const busy = ref(false)
 const waitingLabel = ref<string | null>(null)
 const errorMessage = ref<string | null>(null)
 const errorDetail = ref<string | null>(null)
+const showDevDetails = import.meta.env.DEV
 const loadError = ref<string | null>(null)
 const refreshError = ref<string | null>(null)
 const refreshing = ref(false)
@@ -1139,7 +1141,7 @@ async function unlockProduct() {
         unlockCancelled.value = true
         return
       }
-      unlockError.value = result.reason
+      unlockError.value = friendlyUnlockReason(result.reason)
       return
     }
     applyUnlockSuccess(result)
@@ -1215,7 +1217,7 @@ onUnmounted(() => {
     <p v-if="dropStatus && !drop" class="wait">{{ dropStatus }}</p>
     <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     <p v-if="loadError" class="error">{{ loadError }}</p>
-    <details v-if="errorDetail" class="dev">
+    <details v-if="showDevDetails && errorDetail" class="dev">
       <summary>Developer details</summary>
       <pre>{{ errorDetail }}</pre>
     </details>

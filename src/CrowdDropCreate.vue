@@ -87,6 +87,7 @@ const busy = ref(false)
 const flowStage = ref<CreateFlowStage>('idle')
 const errorMessage = ref<string | null>(null)
 const errorDetail = ref<string | null>(null)
+const showDevDetails = import.meta.env.DEV
 /** Immutable Created-screen data — independent of the next Create form. */
 const createdResult = ref<CreatedResultSnapshot | null>(null)
 const lastTxHash = ref<string | null>(null)
@@ -630,7 +631,7 @@ watch(walletAccount, (wallet) => {
         </p>
 
         <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-        <details v-if="errorDetail" class="dev">
+        <details v-if="showDevDetails && errorDetail" class="dev">
           <summary>Developer details</summary>
           <pre>{{ errorDetail }}</pre>
         </details>

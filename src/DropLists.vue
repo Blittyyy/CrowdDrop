@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import DropCard from './DropCard.vue'
-import { loadCommunityDrops, loadDropSummary, loadMyDrops, type DropSummary } from './dropCatalog'
+import {
+  loadClaimTimestampsForDropIds,
+  loadCommunityDrops,
+  loadDropSummary,
+  loadMyDrops,
+  type DropSummary,
+} from './dropCatalog'
+import { partitionYourDrops } from './dropHistory'
 import {
   ACTIVE_DROP_POLL_MS,
   canStartPollTick,
@@ -14,6 +21,7 @@ import {
   shouldPollHomeLists,
 } from './homeListPolling'
 import { activeCrowdDropNetwork } from './escrowConfig'
+import { goToHistory } from './appNavigation'
 import { readRecentDropIds, removeRecentDropId } from './lastOpenedDrop'
 import {
   walletAccount,
@@ -26,6 +34,7 @@ import type { PublicProductMetadata } from './products/finalizeClient'
 const community = ref<DropSummary[]>([])
 const recent = ref<DropSummary[]>([])
 const mine = ref<DropSummary[]>([])
+const hasHistory = ref(false)
 const productsByDropId = ref<Record<string, PublicProductMetadata>>({})
 const communityStatus = ref<string | null>(null)
 const communityFailed = ref(false)
@@ -39,6 +48,10 @@ let myGen = 0
 let refreshGen = 0
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let pollInFlight = false
+
+const showHistoryLink = computed(() =>
+  !!walletAccount.value && walletOnActiveNetwork.value && hasHistory.value,
+)
 
 function visibleSummaries(): DropSummary[] {
   return [...community.value, ...recent.value, ...mine.value]
@@ -150,15 +163,18 @@ async function loadMine() {
   if (walletChecking.value) {
     myStatus.value = null
     mine.value = []
+    hasHistory.value = false
     return
   }
   if (!walletAccount.value) {
     mine.value = []
+    hasHistory.value = false
     myStatus.value = 'Connect to see Your Drops.'
     return
   }
   if (!walletOnActiveNetwork.value) {
     mine.value = []
+    hasHistory.value = false
     myStatus.value = `Switch to ${activeCrowdDropNetwork.chainName} to see Your Drops.`
     return
   }
@@ -167,15 +183,25 @@ async function loadMine() {
     const rows = await loadMyDrops(walletAccount.value)
     if (gen !== myGen)
       return
-    mine.value = rows
-    myStatus.value = rows.length === 0 ? 'You haven’t created or joined a Drop yet.' : null
+    const claimedIds = rows.filter(row => row.status === 'Claimed').map(row => row.id)
+    const claimTs = await loadClaimTimestampsForDropIds(claimedIds)
+    if (gen !== myGen)
+      return
+    const nowSec = Math.floor(Date.now() / 1000)
+    const { home, history } = partitionYourDrops(rows, nowSec, claimTs)
+    mine.value = home
+    hasHistory.value = history.length > 0
+    myStatus.value = home.length === 0 && history.length === 0
+      ? 'You haven’t created or joined a Drop yet.'
+      : null
     void enrichVisibleProducts()
   }
   catch {
     if (gen !== myGen)
       return
     mine.value = []
-    myStatus.value = 'You haven’t created or joined a Drop yet.'
+    hasHistory.value = false
+    myStatus.value = 'Couldn’t load Your Drops. Pull to refresh or try again.'
   }
 }
 
@@ -359,6 +385,14 @@ onUnmounted(() => {
           :product="productsByDropId[row.id] ?? null"
         />
       </div>
+      <button
+        v-if="showHistoryLink"
+        type="button"
+        class="history-link"
+        @click="goToHistory()"
+      >
+        View history →
+      </button>
     </div>
 
     <div class="block">
@@ -462,6 +496,23 @@ h2 {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
+}
+.history-link {
+  margin-top: 8px;
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: #8A8A8A;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0;
+  min-height: 44px;
+  cursor: pointer;
+  text-align: left;
+}
+.history-link:hover {
+  color: #6A6A6A;
 }
 .retry {
   margin-top: 8px;

@@ -12,5 +12,6 @@ export {
   goHome,
   goToCreateDrop,
   goToHome,
+  goToHistory,
   openDropById,
 } from './appNavigation'

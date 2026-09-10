@@ -25,12 +25,12 @@ export async function getCachedProductByDrop(
 
   const promise = fetchProductByDrop(key, { fetchImpl: options.fetchImpl })
     .then((product) => {
+      // Cache hits and confirmed 404s (null). Do not cache transient failures.
       cache.set(key, product)
       inflight.delete(key)
       return product
     })
     .catch(() => {
-      cache.set(key, null)
       inflight.delete(key)
       return null
     })

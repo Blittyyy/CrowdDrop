@@ -72,8 +72,8 @@ function formatHomeAmount(value: bigint, decimals: number): string {
   assert.match(detailSrc, /\{\{\s*contributionHome\s*\}\}/)
   assert.match(detailSrc, /\{\{\s*tokenLabel\s*\}\} per person/)
 
-  assert.match(createSrc, /contributionDisplay/)
-  assert.match(createSrc, /\{\{\s*contributionDisplay\s*\}\} \{\{\s*network\.tokenSymbol\s*\}\} per person/)
+  assert.match(createSrc, /createdResult\.contributionDisplay/)
+  assert.match(createSrc, /\{\{\s*createdResult\.contributionDisplay\s*\}\} \{\{\s*network\.tokenSymbol\s*\}\} per person/)
 }
 
 console.log('check-home-ui-fixes: ok')

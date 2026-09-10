@@ -67,12 +67,14 @@ export async function fetchProductByDrop(
   })
   if (response.status === 404)
     return null
+  if (!response.ok)
+    throw new Error('Could not load product details.')
   const payload = await response.json() as {
     ok?: boolean
     product?: PublicProductMetadata
   }
-  if (!response.ok || payload.ok !== true || !payload.product)
-    return null
+  if (payload.ok !== true || !payload.product)
+    throw new Error('Could not load product details.')
 
   // Hard guard: never surface private storage fields even if API regresses.
   const product = payload.product

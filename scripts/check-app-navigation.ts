@@ -7,7 +7,9 @@ import {
   canSpaBack,
   dropPath,
   goBackOrHome,
+  goToHistory,
   goToHome,
+  historyPath,
   homePath,
   lastNavigationUsedAssign,
   lastNavigationWasSpa,
@@ -26,6 +28,7 @@ function check(cond: unknown, msg: string) {
 check(dropPath('3') === '/?drop=3', 'drop path')
 check(dropPath('15') === '/?drop=15', 'drop path encodes id')
 check(homePath() === '/?home=1', 'home path')
+check(historyPath() === '/?history=1', 'history path')
 check(
   resolveAppRoute(`https://usecrowddrop.xyz${dropPath('3')}`).name === 'drop',
   'drop path resolves to drop route',
@@ -33,6 +36,10 @@ check(
 check(
   resolveAppRoute(`https://usecrowddrop.xyz${homePath()}`).name === 'create',
   'home path resolves to create route',
+)
+check(
+  resolveAppRoute(`https://usecrowddrop.xyz${historyPath()}`).name === 'history',
+  'history path resolves to history route',
 )
 
 // --- Mock browser for SPA navigation (no real reload) ---
@@ -137,6 +144,20 @@ function installBrowserMock(initialPath = '/?home=1') {
   check(canSpaBack(), 'can spa back after push')
   browser.popBack()
   check(browser.path === '/?home=1', 'back restores home path')
+}
+
+// History SPA + open Drop Detail from History
+{
+  resetNavigationTestFlags()
+  const browser = installBrowserMock('/?home=1')
+  goToHistory()
+  check(lastNavigationWasSpa, 'history uses SPA')
+  check(browser.path === '/?history=1', 'url becomes history')
+  check(!browser.assignCalled, 'history no location.assign')
+  openDropById('11')
+  check(browser.path === '/?drop=11', 'history row opens drop detail')
+  goToHome()
+  check(browser.path === '/?home=1', 'home from history flow')
 }
 
 // 9: direct /?drop=ID load still resolves

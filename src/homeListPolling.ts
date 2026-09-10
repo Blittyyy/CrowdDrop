@@ -32,11 +32,12 @@ export function pollableSummaryIds(...lists: DropSummary[][]): string[] {
   return ids
 }
 
-/** Preserve wallet relation when merging a fresh public read into Home lists. */
+/** Preserve wallet relation / deposit when merging a fresh public read into Home lists. */
 export function mergePolledSummary(existing: DropSummary, fresh: DropSummary): DropSummary {
   return {
     ...fresh,
     relation: existing.relation ?? fresh.relation,
+    walletDeposit: existing.walletDeposit ?? fresh.walletDeposit,
   }
 }
 

@@ -21,6 +21,10 @@ export function homePath(): string {
   return '/?home=1'
 }
 
+export function historyPath(): string {
+  return '/?history=1'
+}
+
 export function dropPath(dropId: string): string {
   return `/?drop=${encodeURIComponent(dropId)}`
 }
@@ -48,6 +52,10 @@ export function navigateToPath(path: string, replace = false): void {
 
 export function goToHome(options?: { replace?: boolean }): void {
   applyHistory(homePath(), options?.replace ?? false)
+}
+
+export function goToHistory(options?: { replace?: boolean }): void {
+  applyHistory(historyPath(), options?.replace ?? false)
 }
 
 export function goHome(): void {

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { init } from '@nimiq/mini-app-sdk'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { applySavedDrop, resolveAppRoute, wantsHomeScreen, type AppRoute } from './appRoute'
+import { applySavedDrop, resolveAppRoute, wantsHomeScreen, wantsHistoryScreen, type AppRoute } from './appRoute'
 import { registerNavigationSync } from './appNavigation'
 import CrowdDropCreate from './CrowdDropCreate.vue'
 import CrowdDropView from './CrowdDropView.vue'
+import DropHistory from './DropHistory.vue'
 import DevTools from './DevTools.vue'
 import Showcase from './showcase/Showcase.vue'
 import { readLastOpenedDrop, saveLastOpenedDrop } from './lastOpenedDrop'
@@ -16,9 +17,9 @@ function readRoute(): AppRoute {
     saveLastOpenedDrop(fromUrl.dropParam)
     return fromUrl
   }
-  if (fromUrl.name === 'showcase' || fromUrl.name === 'dev')
+  if (fromUrl.name === 'showcase' || fromUrl.name === 'dev' || fromUrl.name === 'history')
     return fromUrl
-  if (wantsHomeScreen(window.location.href))
+  if (wantsHomeScreen(window.location.href) || wantsHistoryScreen(window.location.href))
     return fromUrl
   const restored = applySavedDrop(fromUrl, readLastOpenedDrop())
   if (restored.name === 'drop') {
@@ -34,7 +35,7 @@ function readRoute(): AppRoute {
 const route = ref<AppRoute>(readRoute())
 const isDev = computed(() => route.value.name === 'dev')
 const isShowcase = computed(() => route.value.name === 'showcase')
-const isHome = computed(() => route.value.name === 'create')
+const isHome = computed(() => route.value.name === 'create' || route.value.name === 'history')
 const isDrop = computed(() => route.value.name === 'drop')
 
 function syncRoute() {
@@ -81,6 +82,7 @@ onUnmounted(() => {
   >
     <Showcase v-if="route.name === 'showcase'" />
     <CrowdDropCreate v-else-if="route.name === 'create'" />
+    <DropHistory v-else-if="route.name === 'history'" />
     <CrowdDropView v-else-if="route.name === 'drop'" :drop-param="route.dropParam" />
     <DevTools v-else />
   </main>

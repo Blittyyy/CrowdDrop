@@ -82,15 +82,22 @@ export async function ethBlockNumber(): Promise<bigint> {
   return BigInt(raw)
 }
 
+export type RpcLog = {
+  data: Hex
+  topics: Hex[]
+  /** Present when the node returns it — used for Claimed resolution times. */
+  blockNumber?: Hex
+}
+
 export async function ethGetLogs(filter: {
   address: string
   topics: readonly (string | null)[]
   fromBlock: bigint
   toBlock: bigint
-}): Promise<Array<{ data: Hex, topics: Hex[] }>> {
+}): Promise<RpcLog[]> {
   /** PublicNode Polygon caps range below 10k blocks. */
   const chunk = 9999n
-  const logs: Array<{ data: Hex, topics: Hex[] }> = []
+  const logs: RpcLog[] = []
   let start = filter.fromBlock
   while (start <= filter.toBlock) {
     const end = start + chunk - 1n < filter.toBlock ? start + chunk - 1n : filter.toBlock
@@ -100,8 +107,19 @@ export async function ethGetLogs(filter: {
         topics: [...filter.topics],
         fromBlock: numberToHex(start),
         toBlock: numberToHex(end),
-      }]) as Array<{ data: Hex, topics: Hex[] }>
-      logs.push(...(part ?? []))
+      }]) as Array<{ data: Hex, topics: Hex[], blockNumber?: Hex | string }>
+      for (const log of part ?? []) {
+        const blockNumber = log.blockNumber != null
+          ? (typeof log.blockNumber === 'string'
+            ? log.blockNumber as Hex
+            : numberToHex(BigInt(log.blockNumber)))
+          : undefined
+        logs.push({
+          data: log.data,
+          topics: log.topics,
+          ...(blockNumber ? { blockNumber } : {}),
+        })
+      }
     }
     catch (error) {
       // Pruned / unavailable history: skip this chunk and keep scanning forward.
@@ -115,6 +133,16 @@ export async function ethGetLogs(filter: {
     start = end + 1n
   }
   return logs
+}
+
+/** Block timestamp (seconds) via eth_getBlockByNumber — no wallet. */
+export async function ethGetBlockTimestamp(blockNumber: bigint): Promise<number> {
+  const block = await publicRpc('eth_getBlockByNumber', [numberToHex(blockNumber), false]) as {
+    timestamp?: string
+  } | null
+  if (!block?.timestamp)
+    throw new Error('Block timestamp unavailable.')
+  return Number(BigInt(block.timestamp))
 }
 
 /** Pruned history or block-range limits — safe to skip the chunk and continue scanning. */

@@ -53,9 +53,28 @@ export function friendlyUserError(error: unknown): string {
     .trim()
 
   if (cleaned.length > 180)
-    return 'Transaction failed. Check the details below.'
+    return 'Transaction failed. Try again.'
 
   return cleaned || 'Something went wrong.'
+}
+
+/** Map unlock API reason codes to concise buyer-facing copy. */
+export function friendlyUnlockReason(reason: string): string {
+  const raw = reason.trim()
+  const lower = raw.toLowerCase()
+  if (!raw || lower === 'buyer_auth_required')
+    return 'Unlock this product to download.'
+  if (lower === 'not_entitled' || lower.includes('not a buyer') || lower.includes('no deposit'))
+    return 'Only buyers who joined this Drop can unlock the product.'
+  if (lower.includes('seller'))
+    return 'Sellers claim escrow separately. Product unlock is for buyers.'
+  if (lower.includes('expired') || lower.includes('not successful') || lower.includes('unsuccessful'))
+    return 'This product is only available after the Drop succeeds.'
+  if (/auth_secret|supabase|jwt|nonce|hmac|cookie|session/i.test(raw))
+    return 'Could not unlock product. Try again.'
+  if (raw.length > 160)
+    return 'Could not unlock product. Try again.'
+  return raw
 }
 
 export function isUnknownDropError(error: unknown): boolean {
