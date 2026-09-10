@@ -44,6 +44,13 @@ const compactAction = computed(() => {
     return `Switch to ${network.chainName}`
   return walletAccount.value || walletSeenAccount.value ? 'Reconnect' : 'Connect'
 })
+
+function onCompactAction() {
+  if (walletAccount.value && !walletOnActiveNetwork.value)
+    void switchWalletNetwork()
+  else
+    void connectWallet()
+}
 </script>
 
 <template>
@@ -62,11 +69,13 @@ const compactAction = computed(() => {
         type="button"
         class="ghost"
         :disabled="walletBusy || extraBusy"
-        @click="walletAccount && !walletOnActiveNetwork ? switchWalletNetwork() : connectWallet()"
+        @click="onCompactAction"
       >
-        {{ compactAction }}
+        {{ walletBusy ? 'Connecting…' : compactAction }}
       </button>
     </div>
+    <p v-if="compact && utility && walletBusy && walletStatus" class="utility-wait">{{ walletStatus }}</p>
+    <p v-if="compact && utility && walletError" class="utility-error">{{ walletError }}</p>
 
     <template v-else>
       <p v-if="walletChecking" class="wait">Checking wallet…</p>
@@ -217,17 +226,34 @@ pre {
   color: #B9430E;
 }
 .utility .ghost {
-  min-height: 32px;
-  padding: 6px 10px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
   color: #141414;
   border: 1px solid #E2E2DE;
   border-radius: 8px;
   background: #fff;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .utility.wrong .ghost {
   border-color: #C94E12;
   color: #C94E12;
+}
+.utility-wait {
+  margin: 4px 0 0;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6A6A6A;
+}
+.utility-error {
+  margin: 4px 0 0;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 600;
+  color: #B00020;
 }
 </style>

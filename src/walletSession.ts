@@ -183,9 +183,15 @@ export async function connectWallet(): Promise<void> {
   walletBusy.value = true
   walletStatus.value = 'Connecting wallet…'
   try {
-    if (!window.ethereum && !await waitForEthereum())
-      throw new Error('Ethereum provider unavailable. Open this app inside Nimiq Pay.')
+    // Call eth_requestAccounts as soon as the provider exists so mobile WebViews
+    // keep the user-gesture. Avoid long polling before the first confirmation.
+    if (!window.ethereum) {
+      walletStatus.value = 'Waiting for wallet…'
+      if (!await waitForEthereum(2_000))
+        throw new Error('Ethereum provider unavailable. Open this app inside Nimiq Pay.')
+    }
 
+    bindProviderEvents()
     walletAccount.value = await requestAccount()
     if (walletAccount.value)
       walletSeenAccount.value = true
@@ -197,7 +203,8 @@ export async function connectWallet(): Promise<void> {
       return
     }
 
-    walletStatus.value = 'Waiting for network switch confirmation…'
+    // Separate confirmation — keep status visible so mobile does not look frozen.
+    walletStatus.value = `Switch to ${network.chainName}…`
     await switchToActiveNetwork()
     walletStatus.value = `${network.chainName} connected.`
   }
