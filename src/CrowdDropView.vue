@@ -58,7 +58,6 @@ import {
 } from './dropDetailPolling'
 import {
   getNimiqPayDropUrl,
-  isMobileShareContext,
   shareCrowdDrop,
 } from './shareDrop'
 import { isUserRejection } from './txRequest'
@@ -68,7 +67,6 @@ import {
   walletBusy,
   walletChecking,
   walletOnActiveNetwork,
-  walletProviderAvailable,
   walletReady,
 } from './walletSession'
 import { getCachedProductByDrop } from './products/productCache'
@@ -382,13 +380,6 @@ const shareFallbackUrl = ref<string | null>(null)
 
 const nimiqPayOpenHref = computed(() =>
   dropId.value ? getNimiqPayDropUrl(dropId.value) : null,
-)
-
-const showNimiqPayHandoff = computed(() =>
-  !walletChecking.value
-  && !walletProviderAvailable.value
-  && isMobileShareContext()
-  && !!nimiqPayOpenHref.value,
 )
 
 async function copySeller() {
@@ -1306,13 +1297,6 @@ onUnmounted(() => {
 
       <div class="rule" />
 
-      <div v-if="showNimiqPayHandoff" class="nimiq-handoff">
-        <a class="primary" :href="nimiqPayOpenHref!">Open in Nimiq Pay</a>
-        <p class="handoff-copy">
-          Open this Drop in Nimiq Pay to connect your wallet and participate.
-        </p>
-      </div>
-
       <button type="button" class="share" :disabled="busy" @click="shareDrop">
         <span class="share-icon" aria-hidden="true">↗</span>
         Share Drop
@@ -1670,7 +1654,7 @@ onUnmounted(() => {
 .rule {
   height: 1px;
   background: #E2E2DE;
-  margin: 14px 0;
+  margin: 14px 0 10px;
 }
 .primary,
 .secondary {
@@ -1708,19 +1692,29 @@ onUnmounted(() => {
 .share {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  margin-top: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  margin: 0 0 12px;
+  padding: 0 12px;
   border: 1px solid #E2E2DE;
-  background: transparent;
+  border-radius: 8px;
+  background: #F6F6F4;
   color: #141414;
   font: inherit;
   font-size: 13px;
-  font-weight: 550;
-  padding: 8px 12px;
-  min-height: 36px;
-  border-radius: 8px;
+  font-weight: 500;
   cursor: pointer;
-  width: auto;
+}
+.share:active:not(:disabled) {
+  background: #EFEFEA;
+}
+.share:focus-visible {
+  outline: 2px solid #C94E12;
+  outline-offset: 2px;
 }
 .share-icon {
   font-size: 13px;
@@ -1728,47 +1722,16 @@ onUnmounted(() => {
   color: #6A6A6A;
 }
 .share-feedback {
-  margin: 6px 0 0;
+  margin: -4px 0 10px;
   font-size: 12px;
   color: #6A6A6A;
 }
 .share-fallback {
-  margin: 4px 0 0;
+  margin: -4px 0 10px;
   font-size: 11px;
   color: #6A6A6A;
   word-break: break-all;
   overflow-wrap: anywhere;
-}
-.nimiq-handoff {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0 0 14px;
-}
-.nimiq-handoff .primary {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid #C94E12;
-  background: #C94E12;
-  color: #fff;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 10px 12px;
-  border-radius: 8px;
-  text-decoration: none;
-  text-align: center;
-  box-sizing: border-box;
-}
-.handoff-copy {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 400;
-  color: #6A6A6A;
-  line-height: 1.4;
 }
 .text-action {
   display: inline-block;

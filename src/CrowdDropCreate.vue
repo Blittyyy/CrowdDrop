@@ -24,7 +24,6 @@ import {
   walletBusy,
   walletChecking,
   walletOnActiveNetwork,
-  walletProviderAvailable,
   walletReady,
 } from './walletSession'
 import {
@@ -66,7 +65,6 @@ import { fetchProductByDrop } from './products/finalizeClient'
 import {
   getCanonicalDropUrl,
   getNimiqPayHomeUrl,
-  isMobileShareContext,
   shareCrowdDrop,
 } from './shareDrop'
 
@@ -118,13 +116,6 @@ const shareUrl = computed(() => {
 })
 
 const nimiqPayOpenHref = computed(() => getNimiqPayHomeUrl())
-
-const showNimiqPayHandoff = computed(() =>
-  !creating.value
-  && !walletChecking.value
-  && !walletProviderAvailable.value
-  && isMobileShareContext(),
-)
 
 const shareFeedback = ref<string | null>(null)
 const shareFallbackUrl = ref<string | null>(null)
@@ -626,10 +617,6 @@ watch(walletAccount, (wallet) => {
           Switch to {{ network.chainName }}
         </button>
       </div>
-      <div v-else-if="showNimiqPayHandoff" class="sys-wallet nimiq-handoff">
-        <a class="sys-btn" :href="nimiqPayOpenHref">Open in Nimiq Pay</a>
-        <p class="handoff-copy">Open CrowdDrop in Nimiq Pay to connect your wallet.</p>
-      </div>
       <section class="intro">
         <p class="tagline">Pool together. Unlock the deal.</p>
         <button
@@ -824,7 +811,8 @@ watch(walletAccount, (wallet) => {
         >
           View transaction
         </a>
-        <button type="button" class="primary" @click="shareCreatedDrop">
+        <button type="button" class="share" @click="shareCreatedDrop">
+          <span class="share-icon" aria-hidden="true">↗</span>
           Share Drop
         </button>
         <p v-if="shareFeedback" class="share-feedback">{{ shareFeedback }}</p>
@@ -881,18 +869,6 @@ watch(walletAccount, (wallet) => {
 .sys-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-.nimiq-handoff {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.handoff-copy {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 400;
-  color: #6A6A6A;
-  line-height: 1.4;
 }
 .intro {
   display: flex;
@@ -1137,14 +1113,19 @@ label span,
   cursor: not-allowed;
 }
 .primary,
-.secondary {
+.secondary,
+.share {
   width: 100%;
-  min-height: 44px;
   border-radius: 8px;
   font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.primary,
+.secondary {
+  min-height: 44px;
   font-size: 14px;
   font-weight: 600;
-  cursor: pointer;
   padding: 10px 12px;
 }
 .primary {
@@ -1157,8 +1138,35 @@ label span,
   background: #B9430E;
   border-color: #B9430E;
 }
+.share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 48px;
+  min-height: 48px;
+  margin: 4px 0 10px;
+  padding: 0 12px;
+  border: 1px solid #E2E2DE;
+  background: #F6F6F4;
+  color: #141414;
+  font-size: 13px;
+  font-weight: 500;
+}
+.share:active:not(:disabled) {
+  background: #EFEFEA;
+}
+.share:focus-visible {
+  outline: 2px solid #C94E12;
+  outline-offset: 2px;
+}
+.share-icon {
+  font-size: 13px;
+  line-height: 1;
+  color: #6A6A6A;
+}
 .secondary {
-  margin-top: 8px;
+  margin-top: 0;
   border: 1px solid #E2E2DE;
   background: transparent;
   color: #141414;
@@ -1206,12 +1214,12 @@ pre {
   word-break: break-all;
 }
 .share-feedback {
-  margin: 0 0 8px;
+  margin: -4px 0 10px;
   font-size: 12px;
   color: #6A6A6A;
 }
 .fallback-link {
-  margin-top: -4px;
+  margin: -4px 0 10px;
 }
 .text-action {
   display: inline-block;

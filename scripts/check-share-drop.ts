@@ -108,23 +108,31 @@ const root = join(import.meta.dirname, '..')
   // 5–6 Created + Detail Share use HTTPS helper path
   assert.match(createSrc, /Share Drop/)
   assert.match(createSrc, /shareCrowdDrop/)
+  assert.match(createSrc, /class="share" @click="shareCreatedDrop"/)
+  assert.doesNotMatch(createSrc, /class="primary" @click="shareCreatedDrop"/)
   assert.match(viewSrc, /Share Drop/)
   assert.match(viewSrc, /shareCrowdDrop/)
+  assert.match(viewSrc, /class="share"/)
   assert.match(shareSrc, /Always uses the canonical HTTPS/)
   assert.match(shareSrc, /preferredDropShareUrl[\s\S]*getCanonicalDropUrl/)
   assert.doesNotMatch(shareSrc, /mobile \? getNimiqPayDropUrl/)
 
-  // 7–9 Open in Nimiq Pay CTA + deeplink helpers preserved
+  // 7–9 Open in Nimiq Pay stays in compact WalletBar only (no full-width orange CTA)
   assert.match(viewSrc, /getNimiqPayDropUrl/)
-  assert.match(viewSrc, /showNimiqPayHandoff/)
-  assert.match(viewSrc, /Open this Drop in Nimiq Pay to connect your wallet and participate/)
-  assert.match(createSrc, /showNimiqPayHandoff/)
+  assert.match(viewSrc, /nimiq-pay-open-href="nimiqPayOpenHref"/)
   assert.match(createSrc, /getNimiqPayHomeUrl/)
+  assert.match(createSrc, /nimiq-pay-open-href="nimiqPayOpenHref"/)
   assert.match(barSrc, /Open in Nimiq Pay/)
+  assert.match(barSrc, /showOpenInNimiqPay/)
+  assert.match(barSrc, /class="ghost open-nimiq"/)
+  assert.doesNotMatch(viewSrc, /showNimiqPayHandoff|class="nimiq-handoff"/)
+  assert.doesNotMatch(createSrc, /showNimiqPayHandoff|class="nimiq-handoff"/)
+  assert.doesNotMatch(viewSrc, /Open this Drop in Nimiq Pay to connect your wallet and participate/)
 
-  // 10–11 public Drop visible; mobile no-provider handoff
+  // 10–11 public Drop visible; mobile no-provider uses header Open CTA
   assert.match(viewSrc, /product-block|productMeta/)
-  assert.match(viewSrc, /showNimiqPayHandoff/)
+  assert.match(barSrc, /isMobileShareContext/)
+  assert.match(barSrc, /!walletProviderAvailable\.value/)
 
   // 12 desktop EIP-1193
   assert.match(barSrc, /walletProviderAvailable/)
