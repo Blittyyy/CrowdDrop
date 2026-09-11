@@ -58,8 +58,15 @@ import {
 } from './dropDetailPolling'
 import {
   getNimiqPayDropUrl,
+  isMobileShareContext,
   shareCrowdDrop,
 } from './shareDrop'
+import {
+  readOpenInNimiqPromptDismissed,
+  shouldShowOpenInNimiqPrompt,
+  writeOpenInNimiqPromptDismissed,
+} from './openInNimiqPrompt'
+import OpenInNimiqPrompt from './OpenInNimiqPrompt.vue'
 import { isUserRejection } from './txRequest'
 import WalletBar from './WalletBar.vue'
 import {
@@ -67,6 +74,7 @@ import {
   walletBusy,
   walletChecking,
   walletOnActiveNetwork,
+  walletProviderAvailable,
   walletReady,
 } from './walletSession'
 import { getCachedProductByDrop } from './products/productCache'
@@ -381,6 +389,28 @@ const shareFallbackUrl = ref<string | null>(null)
 const nimiqPayOpenHref = computed(() =>
   dropId.value ? getNimiqPayDropUrl(dropId.value) : null,
 )
+
+const openPromptDismissed = ref(false)
+
+watch(dropId, (id) => {
+  openPromptDismissed.value = id ? readOpenInNimiqPromptDismissed(id) : false
+}, { immediate: true })
+
+const showOpenInNimiqPrompt = computed(() =>
+  shouldShowOpenInNimiqPrompt({
+    walletChecking: walletChecking.value,
+    providerAvailable: walletProviderAvailable.value,
+    mobile: isMobileShareContext(),
+    hasDropId: !!dropId.value && !!nimiqPayOpenHref.value,
+    dismissed: openPromptDismissed.value,
+  }),
+)
+
+function dismissOpenInNimiqPrompt() {
+  if (dropId.value)
+    writeOpenInNimiqPromptDismissed(dropId.value)
+  openPromptDismissed.value = true
+}
 
 async function copySeller() {
   if (!drop.value)
@@ -1451,6 +1481,12 @@ onUnmounted(() => {
         :reload-token="participantReloadToken"
       />
     </template>
+
+    <OpenInNimiqPrompt
+      v-if="showOpenInNimiqPrompt && nimiqPayOpenHref"
+      :open-href="nimiqPayOpenHref"
+      @dismiss="dismissOpenInNimiqPrompt"
+    />
   </section>
 </template>
 
