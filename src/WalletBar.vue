@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { activeCrowdDropNetwork } from './escrowConfig'
+import { isMobileShareContext } from './shareDrop'
 import {
   connectWallet,
   switchWalletNetwork,
@@ -11,6 +12,7 @@ import {
   walletError,
   walletErrorDetail,
   walletOnActiveNetwork,
+  walletProviderAvailable,
   walletReady,
   walletSeenAccount,
   walletShortAddress,
@@ -22,15 +24,32 @@ const props = defineProps<{
   compact?: boolean
   /** Light / Orange utility header treatment (Home). Default keeps legacy dark styling for Detail/Create. */
   utility?: boolean
+  /** Nimiq Pay deeplink for Open in Nimiq Pay when no EIP-1193 provider. */
+  nimiqPayOpenHref?: string | null
 }>()
 
 const network = activeCrowdDropNetwork
 const showDevDetails = import.meta.env.DEV
 const walletChainLabel = computed(() => walletChainName.value ?? 'Unknown')
 
+const showOpenInNimiqPay = computed(() =>
+  !walletChecking.value
+  && !walletProviderAvailable.value
+  && isMobileShareContext()
+  && !!props.nimiqPayOpenHref,
+)
+
+const showConnect = computed(() =>
+  !walletChecking.value
+  && walletProviderAvailable.value
+  && !(walletAccount.value && walletOnActiveNetwork.value),
+)
+
 const compactMeta = computed(() => {
   if (walletChecking.value)
     return 'Checking…'
+  if (!walletProviderAvailable.value)
+    return 'Nimiq Pay required'
   if (walletShortAddress.value && walletOnActiveNetwork.value)
     return `${network.chainName} · ${walletShortAddress.value}`
   if (walletShortAddress.value)
@@ -39,11 +58,17 @@ const compactMeta = computed(() => {
 })
 
 const compactAction = computed(() => {
-  if (walletChecking.value || (walletAccount.value && walletOnActiveNetwork.value))
+  if (!showConnect.value)
     return null
   if (walletAccount.value && !walletOnActiveNetwork.value)
     return `Switch to ${network.chainName}`
   return walletAccount.value || walletSeenAccount.value ? 'Reconnect' : 'Connect'
+})
+
+const noProviderHint = computed(() => {
+  if (walletChecking.value || walletProviderAvailable.value)
+    return null
+  return 'Open CrowdDrop in Nimiq Pay to connect your wallet.'
 })
 
 function onCompactAction() {
@@ -66,8 +91,15 @@ function onCompactAction() {
     <template v-if="compact">
       <div class="compact-row">
         <span class="meta">{{ compactMeta }}</span>
+        <a
+          v-if="showOpenInNimiqPay"
+          class="ghost open-nimiq"
+          :href="nimiqPayOpenHref!"
+        >
+          Open in Nimiq Pay
+        </a>
         <button
-          v-if="compactAction"
+          v-else-if="compactAction"
           type="button"
           class="ghost"
           :disabled="walletBusy || extraBusy"
@@ -76,6 +108,7 @@ function onCompactAction() {
           {{ walletBusy ? 'Connecting…' : compactAction }}
         </button>
       </div>
+      <p v-if="utility && noProviderHint && !showOpenInNimiqPay" class="utility-wait">{{ noProviderHint }}</p>
       <p v-if="utility && walletBusy && walletStatus" class="utility-wait">{{ walletStatus }}</p>
       <p v-if="utility && walletError" class="utility-error">{{ walletError }}</p>
       <p v-if="!utility && walletError" class="error">{{ walletError }}</p>
@@ -99,15 +132,23 @@ function onCompactAction() {
           Switch to {{ network.chainName }} before continuing.
         </p>
       </template>
-      <p v-if="walletStatus && !walletChecking && !walletReady" class="wait">{{ walletStatus }}</p>
+      <p v-if="noProviderHint" class="wait">{{ noProviderHint }}</p>
+      <p v-if="walletStatus && !walletChecking && !walletReady && walletProviderAvailable" class="wait">{{ walletStatus }}</p>
       <p v-if="walletError" class="error">{{ walletError }}</p>
       <details v-if="showDevDetails && walletErrorDetail" class="dev">
         <summary>Developer details</summary>
         <pre>{{ walletErrorDetail }}</pre>
       </details>
       <div class="actions">
+        <a
+          v-if="showOpenInNimiqPay"
+          class="secondary open-nimiq"
+          :href="nimiqPayOpenHref!"
+        >
+          Open in Nimiq Pay
+        </a>
         <button
-          v-if="!walletChecking"
+          v-else-if="!walletChecking && walletProviderAvailable"
           type="button"
           class="secondary"
           :disabled="walletBusy || extraBusy"
@@ -133,129 +174,128 @@ function onCompactAction() {
 .wallet {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
+  font-family: Inter, system-ui, sans-serif;
+}
+.wallet.compact {
+  align-items: flex-end;
+  text-align: right;
+  gap: 2px;
+  min-width: 0;
 }
 .compact-row {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 44px;
 }
 .meta {
   margin: 0;
-  color: var(--cd-tan);
-  font-size: 0.78rem;
-  letter-spacing: 0.01em;
+  font-size: 11px;
+  font-weight: 400;
+  color: #6A6A6A;
+  line-height: 1.3;
 }
-.wait {
-  margin: 0;
-  color: var(--cd-cream);
-  font-size: 0.85rem;
+.wallet.compact .meta {
+  font-size: 11px;
+}
+.wallet.utility .meta {
+  color: #6A6A6A;
+}
+.wallet.wrong.utility .meta {
+  color: #B9430E;
+}
+.ghost,
+a.open-nimiq.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #E2E2DE;
+  background: #fff;
+  color: #141414;
+  font: inherit;
+  font-size: 12px;
   font-weight: 600;
-}
-.warn {
-  margin: 0;
-  color: var(--cd-orange);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-.error {
-  margin: 0;
-  color: var(--cd-error);
-  font-size: 0.85rem;
-}
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  margin-top: 0.5rem;
-}
-button {
-  min-height: 44px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  padding: 0.75rem 1rem;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 8px;
   cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  touch-action: manipulation;
 }
-button:disabled {
+.wallet.utility .ghost,
+.wallet.utility a.open-nimiq.ghost {
+  border-color: #C94E12;
+  color: #C94E12;
+  background: transparent;
+}
+.ghost:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.primary {
-  background: var(--cd-orange);
-  color: var(--cd-cream);
-  font-weight: 600;
-}
-.secondary {
-  background: transparent;
-  color: var(--cd-cream);
-  border-color: var(--cd-border);
-}
-.ghost {
-  min-height: 28px;
-  padding: 0.25rem 0.55rem;
-  font-size: 0.72rem;
-  background: transparent;
-  color: var(--cd-tan);
-  border: 1px solid var(--cd-border);
-  border-radius: 999px;
-}
-.wrong .meta {
-  color: var(--cd-orange);
-}
-.dev {
-  margin: 0.35rem 0;
-  color: var(--cd-muted);
-}
-pre {
-  white-space: pre-wrap;
-  font-size: 0.75rem;
-  color: var(--cd-muted);
-}
-
-/* Approved Home / utility header */
-.utility.compact {
-  gap: 0;
-}
-.utility .meta {
-  color: #6A6A6A;
+.utility-wait,
+.wait {
+  margin: 0;
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
+  color: #6A6A6A;
+  line-height: 1.35;
+  max-width: 14rem;
 }
-.utility.wrong .meta {
+.utility-error,
+.error {
+  margin: 0;
+  font-size: 11px;
+  color: #B9430E;
+  line-height: 1.35;
+}
+.warn {
+  margin: 0;
+  font-size: 11px;
   color: #B9430E;
 }
-.utility .ghost {
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.secondary,
+a.open-nimiq.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
-  min-width: 44px;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #141414;
   border: 1px solid #E2E2DE;
+  background: #F6F6F4;
+  color: #141414;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 12px;
   border-radius: 8px;
-  background: #fff;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
+  cursor: pointer;
+  text-decoration: none;
 }
-.utility.wrong .ghost {
-  border-color: #C94E12;
-  color: #C94E12;
-}
-.utility-wait {
-  margin: 4px 0 0;
-  text-align: right;
-  font-size: 11px;
+.primary {
+  min-height: 44px;
+  border: 1px solid #C94E12;
+  background: #C94E12;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
   font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dev {
+  font-size: 11px;
   color: #6A6A6A;
 }
-.utility-error {
+.dev pre {
+  white-space: pre-wrap;
+  word-break: break-word;
   margin: 4px 0 0;
-  text-align: right;
-  font-size: 11px;
-  font-weight: 600;
-  color: #B00020;
 }
 </style>

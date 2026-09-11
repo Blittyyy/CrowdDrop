@@ -28,9 +28,10 @@ function formatHomeAmount(value: bigint, decimals: number): string {
 
 // --- 1. Disconnected Home: exactly one Connect CTA (header), no full-width Connect ---
 {
-  assert.match(walletBarSrc, /return walletAccount\.value \|\| walletSeenAccount\.value \? 'Reconnect' : 'Connect'/)
+  assert.match(walletBarSrc, /walletAccount\.value \|\| walletSeenAccount\.value \? 'Reconnect' : 'Connect'/)
   assert.match(walletBarSrc, /compactAction/)
-  assert.match(createSrc, /<WalletBar compact utility/)
+  assert.match(walletBarSrc, /walletProviderAvailable/)
+  assert.match(createSrc, /<WalletBar[\s\S]*compact[\s\S]*utility/)
 
   assert.match(createSrc, /needsNetworkSwitchCta/)
   const homeTemplate = createSrc.slice(createSrc.indexOf('<template>'), createSrc.indexOf('</template>') + 11)

@@ -8,7 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "typecheck:api": "tsc --noEmit -p tsconfig.api.json",
     "preview": "vite preview",
-    "test:home-ui": "node --experimental-strip-types scripts/check-home-ui-fixes.ts && node --experimental-strip-types scripts/check-drop-history.ts",
+    "test:home-ui": "node --experimental-strip-types scripts/check-home-ui-fixes.ts && node --experimental-strip-types scripts/check-drop-history.ts && node --experimental-strip-types scripts/check-share-drop.ts",
     "test:route": "node --experimental-strip-types scripts/check-app-route.ts",
     "test:navigation": "node --experimental-strip-types scripts/check-app-navigation.ts",
     "test:allowance": "node --experimental-strip-types scripts/check-token-allowance.ts",

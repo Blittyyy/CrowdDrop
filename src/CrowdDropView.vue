@@ -56,7 +56,11 @@ import {
   shouldPollDrop,
   snapshotFromDrop,
 } from './dropDetailPolling'
-import { dropShareUrl, shareDropLink } from './shareDrop'
+import {
+  getNimiqPayDropUrl,
+  isMobileShareContext,
+  shareCrowdDrop,
+} from './shareDrop'
 import { isUserRejection } from './txRequest'
 import WalletBar from './WalletBar.vue'
 import {
@@ -64,6 +68,7 @@ import {
   walletBusy,
   walletChecking,
   walletOnActiveNetwork,
+  walletProviderAvailable,
   walletReady,
 } from './walletSession'
 import { getCachedProductByDrop } from './products/productCache'
@@ -373,6 +378,18 @@ function applyUnlockSuccess(result: {
 
 const sellerCopied = ref(false)
 const shareFeedback = ref<string | null>(null)
+const shareFallbackUrl = ref<string | null>(null)
+
+const nimiqPayOpenHref = computed(() =>
+  dropId.value ? getNimiqPayDropUrl(dropId.value) : null,
+)
+
+const showNimiqPayHandoff = computed(() =>
+  !walletChecking.value
+  && !walletProviderAvailable.value
+  && isMobileShareContext()
+  && !!nimiqPayOpenHref.value,
+)
 
 async function copySeller() {
   if (!drop.value)
@@ -393,33 +410,22 @@ async function shareDrop() {
   if (!dropId.value)
     return
   shareFeedback.value = null
-  const url = dropShareUrl(dropId.value)
-  try {
-    const result = await shareDropLink(url)
-    shareFeedback.value = result === 'copied' ? 'Link copied' : null
-    if (shareFeedback.value) {
-      window.setTimeout(() => {
-        shareFeedback.value = null
-      }, 1600)
-    }
+  shareFallbackUrl.value = null
+  const result = await shareCrowdDrop({
+    dropId: dropId.value,
+    productTitle: productMeta.value?.title ?? null,
+  })
+  if (result.status === 'cancelled' || result.status === 'shared')
+    return
+  if (result.status === 'copied') {
+    shareFeedback.value = 'Link copied'
+    window.setTimeout(() => {
+      shareFeedback.value = null
+    }, 1600)
+    return
   }
-  catch (error) {
-    if (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError')
-      return
-    try {
-      await navigator.clipboard.writeText(url)
-      shareFeedback.value = 'Link copied'
-      window.setTimeout(() => {
-        shareFeedback.value = null
-      }, 1600)
-    }
-    catch {
-      shareFeedback.value = 'Couldn’t share'
-      window.setTimeout(() => {
-        shareFeedback.value = null
-      }, 1600)
-    }
-  }
+  shareFallbackUrl.value = result.url
+  shareFeedback.value = 'Copy this link'
 }
 
 function setError(error: unknown) {
@@ -1195,7 +1201,12 @@ onUnmounted(() => {
   <section class="drop-view utility">
     <header class="app-head">
       <p class="brand">CrowdDrop</p>
-      <WalletBar compact utility :extra-busy="busy || unlockBusy" />
+      <WalletBar
+        compact
+        utility
+        :extra-busy="busy || unlockBusy"
+        :nimiq-pay-open-href="nimiqPayOpenHref"
+      />
     </header>
 
     <div class="nav">
@@ -1295,15 +1306,24 @@ onUnmounted(() => {
 
       <div class="rule" />
 
+      <div v-if="showNimiqPayHandoff" class="nimiq-handoff">
+        <a class="primary" :href="nimiqPayOpenHref!">Open in Nimiq Pay</a>
+        <p class="handoff-copy">
+          Open this Drop in Nimiq Pay to connect your wallet and participate.
+        </p>
+      </div>
+
+      <button type="button" class="share" :disabled="busy" @click="shareDrop">
+        <span class="share-icon" aria-hidden="true">↗</span>
+        Share Drop
+      </button>
+      <p v-if="shareFeedback" class="share-feedback">{{ shareFeedback }}</p>
+      <p v-if="shareFallbackUrl" class="share-fallback">{{ shareFallbackUrl }}</p>
+
       <!-- Active Seller -->
       <template v-if="isActiveSellerDetail">
         <p class="note">You created this Drop.</p>
         <p class="note">{{ waitingBuyersLine }}</p>
-        <button type="button" class="share" :disabled="busy" @click="shareDrop">
-          <span class="share-icon" aria-hidden="true">↗</span>
-          Share Drop
-        </button>
-        <p v-if="shareFeedback" class="share-feedback">{{ shareFeedback }}</p>
       </template>
 
       <!-- Active Buyer / Joined Buyer -->
@@ -1711,6 +1731,44 @@ onUnmounted(() => {
   margin: 6px 0 0;
   font-size: 12px;
   color: #6A6A6A;
+}
+.share-fallback {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #6A6A6A;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.nimiq-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.nimiq-handoff .primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #C94E12;
+  background: #C94E12;
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  text-align: center;
+  box-sizing: border-box;
+}
+.handoff-copy {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: #6A6A6A;
+  line-height: 1.4;
 }
 .text-action {
   display: inline-block;

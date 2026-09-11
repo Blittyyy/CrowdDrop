@@ -15,6 +15,8 @@ export const walletChainName = ref<string | null>(null)
 export const walletStatus = ref('Checking wallet…')
 export const walletError = ref<string | null>(null)
 export const walletErrorDetail = ref<string | null>(null)
+/** True when an EIP-1193 provider is present (Nimiq Pay or browser wallet). */
+export const walletProviderAvailable = ref(false)
 
 export const walletOnActiveNetwork = computed(() => isActiveCrowdDropChain(walletChainId.value))
 export const walletReady = computed(() => Boolean(walletAccount.value) && walletOnActiveNetwork.value)
@@ -87,11 +89,12 @@ export async function refreshWalletSilent(): Promise<void> {
 
   silentRefresh = (async () => {
     const available = window.ethereum || await waitForEthereum()
+    walletProviderAvailable.value = Boolean(available)
     if (!available) {
       walletAccount.value = null
       walletChainId.value = null
       walletChainName.value = null
-      walletStatus.value = 'Wallet unavailable. Open this app inside Nimiq Pay.'
+      walletStatus.value = 'Open CrowdDrop in Nimiq Pay to connect your wallet.'
       return
     }
     bindProviderEvents()

@@ -17,6 +17,7 @@ import {
   walletOnActiveNetwork,
 } from './walletSession'
 import WalletBar from './WalletBar.vue'
+import { getNimiqPayHomeUrl } from './shareDrop'
 
 const rows = ref<HistoryDropRow[]>([])
 const productsByDropId = ref<Record<string, PublicProductMetadata>>({})
@@ -98,7 +99,7 @@ onMounted(() => {
   <div class="history">
     <header class="top">
       <button type="button" class="back" @click="goToHome()">← Home</button>
-      <WalletBar compact utility />
+      <WalletBar compact utility :nimiq-pay-open-href="getNimiqPayHomeUrl()" />
     </header>
 
     <h1 class="title">{{ title }}</h1>

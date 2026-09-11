@@ -12,7 +12,6 @@ import {
 } from './evm'
 import { parseTokenAmount } from './tokenMath'
 import { developerErrorDetail, friendlyUserError } from './userErrors'
-import { formatWalletError } from './wallet'
 import { isUserRejection } from './txRequest'
 import { saveLastOpenedDrop } from './lastOpenedDrop'
 import { openDropById } from './appNavigation'
@@ -25,6 +24,7 @@ import {
   walletBusy,
   walletChecking,
   walletOnActiveNetwork,
+  walletProviderAvailable,
   walletReady,
 } from './walletSession'
 import {
@@ -63,6 +63,12 @@ import {
   friendlyUploadFailure,
 } from './products/upload'
 import { fetchProductByDrop } from './products/finalizeClient'
+import {
+  getCanonicalDropUrl,
+  getNimiqPayHomeUrl,
+  isMobileShareContext,
+  shareCrowdDrop,
+} from './shareDrop'
 
 const network = activeCrowdDropNetwork
 
@@ -108,8 +114,20 @@ const recoveryBusy = ref(false)
 const shareUrl = computed(() => {
   if (!createdResult.value)
     return ''
-  return `${window.location.origin}/?drop=${createdResult.value.dropId}`
+  return getCanonicalDropUrl(createdResult.value.dropId)
 })
+
+const nimiqPayOpenHref = computed(() => getNimiqPayHomeUrl())
+
+const showNimiqPayHandoff = computed(() =>
+  !creating.value
+  && !walletChecking.value
+  && !walletProviderAvailable.value
+  && isMobileShareContext(),
+)
+
+const shareFeedback = ref<string | null>(null)
+const shareFallbackUrl = ref<string | null>(null)
 
 const txExplorerUrl = computed(() => {
   const hash = createdResult.value?.createTxHash ?? lastTxHash.value
@@ -518,16 +536,27 @@ async function createDrop() {
   }
 }
 
-async function copyLink() {
-  if (!shareUrl.value)
+async function shareCreatedDrop() {
+  if (!createdResult.value)
     return
-  try {
-    await navigator.clipboard.writeText(shareUrl.value)
+  shareFeedback.value = null
+  shareFallbackUrl.value = null
+  const result = await shareCrowdDrop({
+    dropId: createdResult.value.dropId,
+    productTitle: createdResult.value.productTitle,
+  })
+  if (result.status === 'cancelled' || result.status === 'shared')
+    return
+  if (result.status === 'copied') {
+    shareFeedback.value = 'Link copied'
     copied.value = true
+    window.setTimeout(() => {
+      shareFeedback.value = null
+    }, 1600)
+    return
   }
-  catch {
-    errorMessage.value = formatWalletError(new Error('Could not copy. Select the link and copy it manually.'))
-  }
+  shareFallbackUrl.value = result.url
+  shareFeedback.value = 'Copy this link'
 }
 
 function openDrop() {
@@ -578,7 +607,12 @@ watch(walletAccount, (wallet) => {
   <div class="home">
     <header class="top">
       <p class="brand">CrowdDrop</p>
-      <WalletBar compact utility :extra-busy="busy || recoveryBusy" />
+      <WalletBar
+        compact
+        utility
+        :extra-busy="busy || recoveryBusy"
+        :nimiq-pay-open-href="nimiqPayOpenHref"
+      />
     </header>
 
     <template v-if="!creating">
@@ -591,6 +625,10 @@ watch(walletAccount, (wallet) => {
         >
           Switch to {{ network.chainName }}
         </button>
+      </div>
+      <div v-else-if="showNimiqPayHandoff" class="sys-wallet nimiq-handoff">
+        <a class="sys-btn" :href="nimiqPayOpenHref">Open in Nimiq Pay</a>
+        <p class="handoff-copy">Open CrowdDrop in Nimiq Pay to connect your wallet.</p>
       </div>
       <section class="intro">
         <p class="tagline">Pool together. Unlock the deal.</p>
@@ -786,9 +824,11 @@ watch(walletAccount, (wallet) => {
         >
           View transaction
         </a>
-        <button type="button" class="primary" @click="copyLink">
-          {{ copied ? 'Copied' : 'Copy link' }}
+        <button type="button" class="primary" @click="shareCreatedDrop">
+          Share Drop
         </button>
+        <p v-if="shareFeedback" class="share-feedback">{{ shareFeedback }}</p>
+        <p v-if="shareFallbackUrl" class="link fallback-link">{{ shareFallbackUrl }}</p>
         <button type="button" class="secondary" @click="openDrop">Open Drop</button>
       </DropCreatedMotionContent>
     </section>
@@ -832,10 +872,27 @@ watch(walletAccount, (wallet) => {
   padding: 10px 12px;
   border-radius: 8px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 .sys-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.nimiq-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.handoff-copy {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: #6A6A6A;
+  line-height: 1.4;
 }
 .intro {
   display: flex;
@@ -1147,6 +1204,14 @@ pre {
   color: #6A6A6A;
   font-size: 12px;
   word-break: break-all;
+}
+.share-feedback {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #6A6A6A;
+}
+.fallback-link {
+  margin-top: -4px;
 }
 .text-action {
   display: inline-block;
